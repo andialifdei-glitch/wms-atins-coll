@@ -1,0 +1,48 @@
+login sudah berhasil. sekarang saya ingin report di kelompokkan. berikut pengelompokkannya :
+- Stock
+	- Stock report (ambil dari tab products)
+	- Stock Movement (ambil dari stock adjustment, delivery orders)
+	- Receiving Report (ambil dari tab receivings)
+	- PO aktif (ambil dari tab purchase_orders)
+- Sales
+	- Sales by day (ambil dari delivery_orders/by items)
+	- Sales summary by item (ambil dari delivery_orders/by items)
+	- gunakan filter by date
+- Human
+	- Report Customers
+	- Report Users
+
+
+untuk judul report jangan Warehose Management System, tapi
+(Jenis Report)
+WMS by Atin's Collection IT Support
+Dibuat oleh : (nama login) tanggal : ddmmyyy jam
+
+Buatkan menu assortment. menu ini berfungsi untuk mengatur parameter produk yang tersedia.
+- Assortment
+	- Ubah parameter, pada setiap baris menu, di ujung paling kanan sediakan tombol edit. Ketika tombol edit ditekan, 	  maka akan menampilkan pop-up box untuk edit barang. parameter yang dapat di edit :
+		- Item Name
+		- Fam Name/code
+		- weight
+		- status : aktif/nonaktif
+		- purchasing price
+		- net price
+	- Tambahkan produk baru. sesuaikan input dengan parameter yang tersedia.
+
+Untuk menu receiving report report, kolom items hilangkan. pada report pdf/excel items jangan dengan simbol2 coding. terjemahkan dahulu menjadi list item agar lebih mudah dibaca. sediakan tombol generate report pada setiap baris receiving report untuk memudahkan generate per report.
+
+Buatkan menu Pengaturan
+-Pengaturan
+	- User Management, bisa membuat akun untuk akses report portal. role yang tersedia yaitu
+		- Admin -> bisa membuka dan mendownload report, namun terbatas pada hanya baca report.
+		- Staff -> hanya bisa membaca report dan tidak bisa download report.
+
+Benahi lagi menu Assortment
+pada edit produk, field yang dapa diubah dan ditampilkan
+	- weight, mengambil dari weightInGrams
+	- Fam name, mengambil dari familyCode
+	- status, mengambil dari productActive 
+pada edit produk, family name gunakan drop down dengan data yang diambil dari families
+untuk generate SKU, gunakan format auto increment dengan mengikuti SKU yang sudah ada. contoh generate SKU adalah
+SKU-"famcode"00xx
+dst
