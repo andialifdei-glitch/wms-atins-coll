@@ -46,3 +46,906 @@ pada edit produk, family name gunakan drop down dengan data yang diambil dari fa
 untuk generate SKU, gunakan format auto increment dengan mengikuti SKU yang sudah ada. contoh generate SKU adalah
 SKU-"famcode"00xx
 dst
+
+untuk proses aktif dan non aktif disamakan. field status, productActive, dan active jika salah satu aktif maka harus aktif semua. jika nonaktif, maka nonaktif semua
+
+sebelum lanjut ke tahap selanjutnya, aku ingin kosmetik dulu dari web-app ini.
+- title "create next app" ganti ke WMS Atin's Collection
+- buatkan alert seperti pop up box. jangan menggunakan alert bawaan dari chrome
+- menu di sidebar gunakan dropdown
+- untuk menu edit produk, sebelum simpan berikan alert dengan pesan "Apakah perubahan sudah sesuai ?" berikan countdown pada tombol OK selama 10 detik karena ini informasi kredensial.
+
+untuk menu pengaturan, user management yang berhak buat user baru hanya root admin. selain itu forbidden.
+rootadmin dapat edit user, ganti password, dan delete user.
+sembunyikan field id dan passwordhash
+Login name pada side bar, ganti dengan full name. jangan role
+
+untuk menu tambah produk, tambahkan box stock awal. ini penting agar tidak harus membuat PO baru. menu ini juga khusus untuk root admin. box SKU harus dalam keadaan disable agar tidak dapat diedit sendiri.
+
+ada bug untuk assortment, untuk perubahan status produk menjadi dari aktif menjadi nonaktif tidak apat dilakukan dan hanya bisa dilakukan pada device android. coba perbaiki bug ini. jika ada kredensial yang harus diperbaiki langsung perbaiki. beritahu aku apa yang harus dilakukan.
+
+saya tidak bisa login di device lain yang menggunakan router yang sama. pada device lain, saya menggunakan alamat 192.168.0.106:3000 perbaiki bug ini
+diatas menu pengaturan, buatkan menu inventory yang terdiri dari :
+-Inventory
+	- Stock Opname, khusus root admin. pada database, sudah tersedia tabel stock_opnames. Root admin membuat initialize stock opname yang mengambil dari list produk. penghitungan dilakukan pada aplikasi android. tugas dari web portal hanya membuat initialize untuk stock opname. berikan juga tombol cancel dengan alert dan alasan pembatalan untuk membatalkan stock opname. stock opname memiliki nomor dokumen SOP-20261010-xxxx
+	- Stock Adjustment, khusus root admin dan admin. pada database sudah tersedia table stock_adjustments. Root admin dan admin membuat initialize stock adjustment yang item nya dipilih dari list produk. penghitungan dilakukan pada aplikasi android.tugas dari web portal hanya membuat initialize untuk stock adjustment. berikan juga tombol cancel dengan alert dan alasan pembatalan untuk membatalkan stock adjustment. stock opname memiliki nomor dokumen Adj-20261010-xxxx
+	- Purchasing Order khusus root admin dan admin. pada database sudah tersedia table purchase_orders. root admin dan admin membuat purchase order yang item nya diambil dari list produk. purchase order untuk input qty pemesanan bisa manual menyesuaikan kebutuhan. setelah PO dibuat diberikan nomor dokumen PO-20261010-xxxx. berikan juga tombol cancel untuk membatalkan stock adjustment dengan alert dan alasan pembatalan.
+
+aku ingin integerasi antara portal dan androis apps. samakan logic dan business logic antara portal dan apps beserta menu2 nya. jika ada yang harus di ubah pada apps android, berikan prompt nya untuk gemini ai studio
+
+sekarang tombol untuk generate report ke excel dan pdf hilang. berikan tombol generate dokumen tersebut untuk stock report, stock movement report, receiving report, PO Aktif, Sales by day, sales summary by item dan purchasing order
+
+menu PO, pas menu tambah produk bikin proporsional size nya, jangan terlalu over. pas klik terbitkan PO kasih alert konfirmasi PO sudah sesuai ?
+menu tambah produk sekarang ga bisa di klik coba perbaiki. tambahin juga alert buat konfirmasi produk udah sesuai atau belum ? kasih countdown 5 detik buat tombol OK
+menu stock opname, pas klik initialize jangan langsung generate. kasih alert konfirmasi dengan tombol OK dikasih countdown 10 detik
+menu report sales summary by item masih kosong. kasih aja filter mau by day, by item, atau summary sales. kasih juga filter date. kalo filter date nya ngga di isi kasih alert harus isi filter date nya dulu.
+
+menu SO dan DO kosong. coba kamu bikin sama persis seperti android apps. dari business logic sampai cek ongkir. untuk API key ke RajaOngkir, coba samain sama logic nya andoid apps. setting API key di pengaturan.
+kartu mutasi/stock card masih blank. coba bikin semacam stock ledger. jadi di stock card muncul list sku. kasih search bar buat cari SKU/Item name. kasih tombol detail buat liat detail movement nya.
+menu stock opname kalo initialize nya masih status open/counting kasih tombol cancel buat batalin SOP. kasih alert juga buat konfirmasi pembatalan stock opname dengan countdown 10 detik.
+menu purchase order & receiving ga bisa proses receiving barang. coba benahi bagian ini. untuk PO status canceled dan complete, jangan kasih tombol apapun. buat yang status nya open kasih tombol proses receiving dan cancel. biasakan kalo ada tombol cancel kasih alert. logic receiving samain sama logic android apps. 
+proses receiving Ketika akan di proses kasih alert buat kofirmasi apakah sudah sesuai ? kasih countdown 10 detik.
+menu report samain sama android apps. plek ketiplek aja. untuk laporan sales dan stock pertahanin.
+rules Utama jangan ubah2 diluar prompt ini.
+jangan ubah logic yang udah running selain yg aku kasih.
+
+menu report masih belum ada. bikin menu report, samain sama android apps. plek ketiplek aja. untuk laporan sales dan stock pertahanin. report terdiri dari report SO, report DO, report PO, Receiving report, Stock opname. hanya report saja, jangan ada mode edit atau apapun itu.
+SO belum bisa dibuat. rules pembuatan SO :
+ambil data customer dari database. sediakan searchbar untuk input customer. sediakan box/text untuk tampilkan nama customer, no Hp, dan alamat.
+Ketika membuat SO, harus bisa edit harga barang dan simpan harga barang terbaru secara temporer untuk SO bersangkutan. Jangan simpan ke database.
+SO yang status nya confirmed harus masih bisa tambah barang dan edit harga.
+Tambahkan tombol processing untuk menaikan status SO ke Processing.
+Ketika status SO sudah processing, sudah tidak bisa tambah barang dan SO pindahkan ke tab processing. hanya bisa ganti jasa ekspedisi yang sebelum nya sudah di snapshot terlebih dahulu ketika membuat SO
+Tombol ready to deliver muncul ketika status SO processing.
+rules Utama jangan ubah2 diluar prompt ini.
+jangan ubah logic yang udah running selain yg aku kasih.
+
+
+# MASTER PROMPT GEMINI AI — INTEGRASI CEK ONGKIR RAJAONGKIR DARI NOL SAMPAI RUNNING
+## Project: Web Portal WMS Atin’s Coll
+
+Bertindak sebagai senior full-stack developer yang bertanggung jawab mengintegrasikan fitur cek ongkir RajaOngkir Komerce API ke web-portal WMS Atin’s Coll, mulai dari audit source code, implementasi backend dan frontend, pengujian API, sampai fitur terbukti berjalan.
+
+Saya ingin fitur yang benar-benar terintegrasi dengan API asli, bukan sekadar UI, mock data, simulasi, atau hardcode tarif.
+
+Kerjakan secara bertahap, aman, dan incremental. Jangan langsung membangun ulang aplikasi.
+
+---
+
+# A. KONTEKS DAN TUJUAN
+
+Web-portal ini merupakan bagian dari ekosistem WMS Atin’s Coll. Aplikasi Android WMS sebelumnya sudah memiliki pengembangan integrasi cek ongkir RajaOngkir. Namun, jangan berasumsi bahwa struktur kode, endpoint, autentikasi, konfigurasi, atau implementasi Android dapat langsung dipakai oleh web.
+
+Tugas pertama adalah memeriksa repository web yang sedang terbuka, mengidentifikasi teknologi dan arsitektur aktualnya, lalu menentukan implementasi yang sesuai.
+
+Tujuan fitur:
+
+1. Mengelola konfigurasi integrasi RajaOngkir dengan aman.
+2. Mencari alamat asal dan tujuan berdasarkan data wilayah yang didukung API.
+3. Menghitung total berat produk.
+4. Memanggil API cek ongkir RajaOngkir.
+5. Menampilkan layanan, tarif, dan estimasi berdasarkan respons API asli.
+6. Menangani error dengan pesan yang bisa dipahami pengguna.
+7. Menguji seluruh alur sampai berhasil menggunakan API asli.
+8. Menghindari bug yang pernah terjadi pada integrasi Android WMS.
+
+Fitur saat ini hanya untuk **cek ongkir**. Jangan membangun fitur pembuatan AWB, booking pengiriman, pickup, cetak label ekspedisi, atau tracking resi karena belum diminta.
+
+# B. ATURAN KRITIS SEBELUM CODING
+
+WAJIB mengikuti ketentuan berikut.
+
+1. Audit struktur project dan kode yang sudah ada sebelum mengubah file.
+2. Pertahankan framework, bahasa, struktur folder, routing, komponen UI, dan pola autentikasi web yang sudah digunakan.
+3. Jangan mengganti framework atau membuat project baru.
+4. Jangan mengubah Firebase Authentication, sistem role, atau mekanisme otorisasi yang sudah berjalan kecuali saya meminta secara eksplisit.
+5. `firestore.rules` yang sudah berjalan adalah baseline produksi. DILARANG mengubah, mengganti, menulis ulang, atau melakukan deploy ulang file tersebut.
+6. Jangan mengubah modul lain yang tidak terkait dengan cek ongkir.
+7. Jangan menghapus fitur atau konfigurasi yang sudah berjalan.
+8. Jangan mengubah data produksi untuk keperluan testing.
+9. Jangan menyimpan API key di JavaScript frontend, source code yang dikirim ke browser, repository publik, local storage browser, atau log.
+10. Jangan mengklaim integrasi berhasil jika hanya berhasil dikompilasi tetapi belum diuji terhadap API asli.
+11. Jangan mengarang endpoint, kode layanan, tarif, estimasi, ID wilayah, atau format respons.
+12. Jangan menutupi error dengan tarif default, layanan pengganti, atau mock response.
+
+Sebelum coding, berikan ringkasan singkat hasil audit:
+- Framework dan versi yang terdeteksi.
+- Struktur frontend dan backend.
+- Sistem login dan role.
+- Mekanisme penyimpanan konfigurasi.
+- Apakah sudah ada Firebase Cloud Functions atau backend API yang bisa digunakan kembali.
+- File yang akan diubah.
+- Rencana implementasi dan pengujian.
+
+Setelah menyampaikan ringkasan tersebut, lanjutkan implementasi jika tidak ada keputusan penting yang harus saya tentukan terlebih dahulu.
+
+# C. AUDIT DAN VERIFIKASI DOKUMENTASI RAJAONGKIR
+
+Gunakan dokumentasi resmi RajaOngkir Komerce yang sesuai dengan API key dan paket akun yang digunakan.
+
+Referensi awal:
+- https://dev-collaborator.komerce.id/docs/Shipping-cost/getting_started/endpoint/
+- https://dev-collaborator.komerce.id/docs/Shipping-cost/getting_started/about/
+- https://dev-collaborator.komerce.id/docs/category/shipping-cost-api---by-rajaongkir/
+- https://collaborator.komerce.id
+
+Dokumentasi awal mencantumkan base URL live:
+
+`https://rajaongkir.komerce.id/api/v1/`
+
+Endpoint yang perlu diperiksa dan diverifikasi dari dokumentasi aktif:
+- Pencarian destinasi domestik: `destination/domestic-destination`
+- Perhitungan ongkir domestik: `calculate/domestic-cost`
+
+Jangan langsung menyalin contoh request tanpa memastikan seluruh detailnya benar.
+
+Verifikasi:
+- HTTP method.
+- URL lengkap.
+- Header autentikasi.
+- Nama parameter request.
+- Format content type.
+- Format berat dan satuannya.
+- Format ID asal dan tujuan.
+- Parameter kurir dan layanan bila diperlukan.
+- Bentuk respons sukses.
+- Bentuk respons error.
+- Batas paket akun dan kuota API.
+- Layanan/kurir yang tersedia untuk akun aktif.
+
+Gunakan endpoint dan parameter yang benar-benar sesuai dokumentasi akun aktif. Jangan mencampur format API lama dengan API baru.
+
+Jika dokumentasi atau kredensial tidak tersedia, jangan menebak. Implementasikan bagian yang dapat diselesaikan, lalu jelaskan data yang dibutuhkan untuk menyelesaikan pengujian API asli.
+
+# D. ARSITEKTUR YANG DIHARAPKAN
+
+Gunakan arsitektur sesuai stack web yang terdeteksi.
+
+Alur umum:
+
+Frontend Web → Backend Web/Cloud Functions → RajaOngkir API
+
+Frontend tidak boleh menghubungi RajaOngkir secara langsung jika hal itu mengharuskan API key dikirim ke browser.
+
+Backend bertanggung jawab untuk:
+- Validasi autentikasi dan otorisasi pengguna.
+- Mengambil konfigurasi API key dari penyimpanan server yang aman.
+- Memvalidasi input.
+- Memanggil RajaOngkir.
+- Menormalisasi respons.
+- Menangani error.
+- Mengembalikan hasil yang aman untuk frontend.
+
+Jika project sudah memakai Firebase Cloud Functions dan fungsi yang ada dapat digunakan ulang, evaluasi pemakaiannya terlebih dahulu.
+
+Jangan membuat backend kedua atau endpoint baru jika fungsi yang ada dapat dikembangkan dengan aman. Namun, jangan memaksakan penggunaan fungsi Android lama apabila struktur request, autentikasi, region, atau kontraknya tidak cocok untuk web.
+
+Jangan membuat proxy publik tanpa autentikasi.
+
+# E. PENGELOLAAN API KEY
+
+Buat atau integrasikan pengaturan RajaOngkir pada halaman Pengaturan web jika sesuai dengan struktur aplikasi.
+
+Hak pengelolaan:
+- Hanya ROOT_ADMIN yang boleh melihat status konfigurasi dan mengelola API key.
+- Pengguna selain ROOT_ADMIN tidak boleh membaca atau mengubah secret.
+- Backend tetap harus memvalidasi otorisasi; menyembunyikan tombol di frontend saja tidak cukup.
+
+Fitur pengaturan yang diperlukan:
+1. Input API key.
+2. Tombol Simpan.
+3. Tombol Uji Koneksi.
+4. Indikator status konfigurasi.
+5. Pesan hasil pengujian yang jelas.
+6. Penanganan jika API key belum diatur.
+7. Penanganan jika API key salah, kedaluwarsa, atau tidak memiliki izin.
+
+Aturan keamanan:
+- Simpan secret menggunakan mekanisme backend yang tersedia, misalnya environment configuration atau secret manager yang sesuai dengan platform project.
+- Jika project sudah memiliki mekanisme pengelolaan secret, gunakan mekanisme itu.
+- Jangan mengirim nilai API key kembali ke browser setelah disimpan.
+- Setelah tersimpan, tampilkan status seperti “API key telah dikonfigurasi”, bukan nilai key lengkap.
+- Jangan menulis API key ke log.
+- Jangan membuat endpoint yang memungkinkan pengguna biasa membaca secret.
+- Jika perubahan memerlukan konfigurasi Firebase atau deployment backend, jelaskan perintah dan dampaknya sebelum melakukan tindakan yang dapat memengaruhi produksi.
+
+Jangan menganggap tombol Uji Koneksi berhasil hanya karena API key tidak kosong. Lakukan request autentikasi atau request ringan yang memang didukung dokumentasi.
+
+Jika paket akun tidak menyediakan endpoint uji khusus, gunakan request valid yang paling aman dan jelaskan bahwa hasilnya menguji akses API, bukan menjamin semua layanan ongkir tersedia.
+
+# F. PENCARIAN DATA WILAYAH INDONESIA
+
+Implementasikan pencarian alamat asal dan tujuan menggunakan data wilayah yang didukung API aktif.
+
+Alur UI yang diharapkan:
+Provinsi → Kabupaten/Kota → Kecamatan → Desa/Kelurahan, apabila tingkat tersebut didukung API dan memang dibutuhkan oleh endpoint ongkir.
+
+Ketentuan:
+1. Jangan membuat daftar ID wilayah secara hardcode.
+2. Jangan menganggap ID dari API lama masih valid untuk API baru.
+3. Gunakan ID atau kode wilayah resmi yang dikembalikan API.
+4. Simpan pasangan ID dan nama wilayah agar pengguna tidak hanya menyimpan teks alamat.
+5. Pilihan wilayah berikutnya harus mengikuti wilayah induk yang dipilih.
+6. Jika provinsi berubah, reset pilihan kabupaten/kota, kecamatan, dan desa yang sudah tidak relevan.
+7. Terapkan pencarian dengan debounce agar setiap ketikan tidak memicu request API.
+8. Gunakan cache untuk data wilayah yang relatif statis.
+9. Hindari request berulang jika parameter pencarian tidak berubah.
+10. Tampilkan loading, hasil kosong, dan error secara berbeda.
+11. Jangan menampilkan hasil wilayah yang berasal dari cache lama sebagai hasil API terbaru tanpa penanda yang sesuai.
+12. Jangan membuat alamat terlihat valid jika ID wilayah yang diperlukan tidak tersedia.
+
+Verifikasi tingkat wilayah yang sebenarnya diwajibkan oleh endpoint ongkir. Jika endpoint hanya memerlukan ID destinasi tertentu, ikuti kontrak tersebut dan jangan menambahkan parameter yang tidak didukung.
+
+Alamat asal pengiriman diambil dari pengaturan WMS yang sudah ada jika tersedia. Jika belum tersedia, buat konfigurasi asal pengiriman yang konsisten dengan struktur project.
+
+Asal pengiriman harus memiliki ID destinasi yang benar, bukan sekadar nama “Banjaran”.
+
+# G. PERHITUNGAN BERAT
+
+Sumber berat utama adalah data master produk WMS.
+
+Ketentuan:
+- Berat produk wajib berupa angka valid dalam gram.
+- Berat tidak boleh negatif atau kosong untuk produk yang wajib dihitung ongkirnya.
+- Kuantitas harus berupa angka positif.
+- Total berat dihitung dari berat setiap produk dikalikan kuantitasnya.
+- Periksa apakah API menerima berat dalam gram atau membutuhkan konversi unit tertentu.
+- Konversi satuan hanya dilakukan setelah format yang diwajibkan API diverifikasi.
+- Jangan melakukan konversi gram ke kilogram dua kali.
+- Gunakan aturan pembulatan yang sesuai dokumentasi API.
+- Tampilkan total berat yang akan dikirim ke API agar mudah diperiksa.
+
+Jika berat salah satu produk tidak tersedia, hentikan perhitungan dan tampilkan produk yang bermasalah. Jangan diam-diam menganggap beratnya nol.
+
+Jika web-portal menyediakan form SO, gunakan item dan kuantitas dari SO tersebut. Jika fitur cek ongkir berdiri sendiri, sediakan input berat total yang tervalidasi. Jangan menciptakan SO atau mengubah stok hanya untuk menghitung ongkir.
+
+# H. PILIHAN JASA KIRIM
+
+Daftar layanan yang telah disepakati untuk WMS Atin’s Coll:
+
+1. Wahana Ekonomis.
+2. Lion REGPACK.
+3. SPX Standard.
+4. Kurir Toko.
+
+Ketentuan:
+- Wahana Ekonomis menggunakan mapping Wahana yang sudah berjalan dan harus diverifikasi.
+- Lion REGPACK menggunakan provider `lion` dan service code `REGPACK` apabila respons API aktif memang mengembalikan layanan tersebut.
+- SPX Standard menggunakan layanan aktual yang dikembalikan provider `spx`.
+- Kurir Toko adalah layanan internal dan tidak boleh diperlakukan sebagai layanan API RajaOngkir tanpa implementasi yang memang diperlukan.
+
+Nama tampilan, kode provider, dan kode layanan harus disimpan secara konsisten.
+
+Riwayat diagnostik dari aplikasi Android pernah menunjukkan:
+- Lion mengembalikan `REGPACK` dengan deskripsi `Regular Service`, dan `BIGPACK` dengan deskripsi `Big Package Service`.
+- SPX mengembalikan `SPX Standard`.
+
+Data itu adalah hasil pengujian terdahulu, bukan jaminan bahwa setiap rute atau akun akan mengembalikan layanan yang sama.
+
+Jangan:
+- Memetakan REGPACK sebagai JagoPack.
+- Memetakan SPX Standard sebagai SPX-Hemat.
+- Mengarang kode layanan Wahana.
+- Menampilkan tarif yang tidak ada pada respons.
+- Mengganti layanan yang tidak tersedia dengan layanan lain tanpa persetujuan pengguna.
+
+Jika layanan tertentu tidak ditemukan pada rute yang dipilih, tampilkan bahwa layanan tersebut tidak tersedia untuk permintaan itu. Bedakan kondisi ini dari API error.
+
+Pertahankan aturan COD yang sudah berlaku dalam WMS. Jangan mengubah aturan COD hanya karena nama layanan ditampilkan berbeda.
+
+# I. FITUR CEK ONGKIR DI WEB
+
+Buat UI yang mengikuti desain dan komponen web-portal yang sudah ada.
+
+Komponen minimal:
+- Alamat asal.
+- Alamat tujuan.
+- Ringkasan total berat.
+- Pilihan jasa kirim.
+- Tombol “Cek Ongkir”.
+- Indikator loading.
+- Area hasil.
+- Pesan error.
+- Tombol coba lagi bila relevan.
+
+Alur pengguna:
+1. Pengguna membuka fitur cek ongkir.
+2. Sistem memuat alamat asal dari pengaturan WMS.
+3. Pengguna memilih tujuan.
+4. Sistem memvalidasi alamat, ID wilayah, dan berat.
+5. Pengguna memilih jasa kirim yang ingin diperiksa.
+6. Frontend mengirim request ke backend WMS.
+7. Backend memvalidasi autentikasi, input, dan konfigurasi.
+8. Backend memanggil endpoint RajaOngkir yang benar.
+9. Backend memvalidasi status HTTP dan struktur JSON.
+10. Backend menormalisasi hasil tanpa menghilangkan kode layanan asli.
+11. Frontend menampilkan tarif, nama layanan, kode layanan bila relevan, dan estimasi dari API.
+12. Jika gagal, tampilkan pesan yang jelas dan catat detail teknis yang aman di log server.
+
+Jangan tampilkan data contoh sebagai hasil produksi.
+
+Jika ingin menyediakan tombol cek beberapa layanan sekaligus, pastikan jumlah request tidak berlebihan dan sesuai kuota akun. Jangan membuat request paralel tanpa batas.
+
+# J. KONTRAK DATA FRONTEND DAN BACKEND
+
+Buat kontrak request/response internal yang konsisten dengan framework web yang digunakan.
+
+Request internal setidaknya memuat:
+- ID asal yang valid.
+- ID tujuan yang valid.
+- Berat dalam satuan yang sudah ditetapkan.
+- Provider/kurir yang diminta.
+- Konteks transaksi jika berasal dari SO, tanpa mengirim data sensitif yang tidak diperlukan.
+
+Response internal sebaiknya memiliki status yang jelas, misalnya:
+- `AVAILABLE`: layanan ditemukan.
+- `TARGET_SERVICE_NOT_RETURNED`: respons valid, tetapi layanan yang diminta tidak ditemukan.
+- `API_ERROR`: request ke API gagal.
+- `INVALID_RESPONSE`: format respons tidak valid.
+- `VALIDATION_ERROR`: input pengguna tidak valid.
+- `CONFIGURATION_ERROR`: konfigurasi API belum tersedia.
+
+Nama status boleh disesuaikan dengan konvensi project, tetapi semantik harus tetap jelas.
+
+Untuk setiap hasil ongkir, pertahankan informasi yang benar-benar tersedia:
+- Provider.
+- Kode layanan asli.
+- Nama layanan asli.
+- Tarif.
+- Estimasi.
+- Deskripsi tambahan bila tersedia.
+
+Jangan menganggap semua provider mempunyai struktur respons identik. Buat parser berdasarkan struktur yang benar-benar dikembalikan API.
+
+# K. BUG YANG PERNAH TERJADI DAN PENCEGAHANNYA
+
+Bug berikut pernah dilaporkan pada pengembangan integrasi Android WMS. Jadikan kasus ini sebagai skenario pengujian dan pemeriksaan. Jangan menganggap akar masalahnya sudah pasti sebelum membaca log dan source code.
+
+## Bug 1 — Semua destinasi menampilkan tarif yang sama
+
+Gejala:
+Destinasi Lampung, Karawang, dan Bandung pernah menghasilkan tarif yang sama, sekitar Rp22.000.
+
+Dugaan penyebab yang perlu diverifikasi:
+- ID destinasi tidak ikut berubah ketika pengguna memilih alamat baru.
+- UI mengirim nama wilayah tetapi backend mengharapkan ID destinasi.
+- Mapping ID wilayah keliru.
+- State tujuan lama masih dipakai.
+- Cache menggunakan key yang tidak menyertakan ID destinasi.
+- Backend mengabaikan parameter tujuan atau memakai nilai default.
+- Respons sebelumnya ditampilkan kembali setelah request baru.
+
+Solusi yang harus diterapkan:
+1. Telusuri nilai tujuan dari UI sampai request API.
+2. Log ID asal, ID tujuan, berat, dan provider secara aman.
+3. Pastikan ID tujuan sesuai dengan wilayah yang dipilih.
+4. Pastikan request body memakai nama parameter yang sesuai dokumentasi aktif.
+5. Pastikan cache key mencakup parameter yang memengaruhi hasil, minimal asal, tujuan, berat, dan provider/layanan.
+6. Jangan memakai satu nilai destinasi default untuk semua pilihan.
+7. Pastikan respons hanya ditampilkan untuk request yang sesuai dengan state terbaru.
+8. Buat tes untuk minimal tiga destinasi berbeda.
+9. Jika tarif memang kebetulan sama dari API, jangan mengubahnya; verifikasi raw response dan parameter request terlebih dahulu.
+
+## Bug 2 — Desa Jayakerta, Karawang tidak ditemukan
+
+Gejala:
+Pencarian destinasi pernah gagal menemukan Jayakerta, Karawang.
+
+Solusi yang harus diterapkan:
+1. Periksa apakah endpoint pencarian destinasi yang digunakan benar untuk API aktif.
+2. Periksa query pencarian, normalisasi spasi, kapitalisasi, dan karakter khusus.
+3. Periksa apakah API menyediakan wilayah pada tingkat desa/kelurahan atau memerlukan tingkat wilayah yang berbeda.
+4. Periksa relasi ID kabupaten, kecamatan, dan desa jika API menyediakan hierarki tersebut.
+5. Jangan menebak atau membuat ID wilayah sendiri.
+6. Jangan menyatakan wilayah tidak didukung hanya karena satu query gagal.
+7. Jika perlu, cari menggunakan nama wilayah induk atau query alternatif yang sah, kemudian validasi hasilnya berdasarkan ID dan nama lengkap.
+8. Jika data memang tidak tersedia di API, tampilkan penjelasan dan jangan mengirim ID palsu ke endpoint ongkir.
+9. Tambahkan tes untuk hasil kosong, query alternatif, dan pemilihan wilayah induk yang benar.
+
+## Bug 3 — Cloud Functions mengembalikan NOT_FOUND
+
+Gejala:
+Endpoint Cloud Functions pernah mengembalikan `NOT_FOUND`.
+
+Penyebab yang perlu diperiksa:
+- URL function salah.
+- Nama function berbeda dengan nama yang dipanggil frontend.
+- Region function berbeda dengan region pada URL.
+- Function belum dideploy atau deployment gagal.
+- Frontend memanggil endpoint lama.
+- URL hosting atau rewrite rule tidak sesuai.
+- Endpoint dipanggil dengan method atau path yang tidak sesuai.
+
+Solusi:
+1. Periksa nama function yang benar-benar dideploy.
+2. Periksa region deployment.
+3. Cocokkan URL frontend dengan URL aktual dari output deployment.
+4. Periksa log deployment dan log function.
+5. Pastikan method HTTP dan route sesuai implementasi.
+6. Gunakan konfigurasi environment untuk URL bila diperlukan.
+7. Jangan mengganti endpoint secara acak atau mengubah konfigurasi Firebase lain tanpa alasan.
+8. Jangan mengubah `firestore.rules`.
+9. Buat health check yang aman untuk memastikan backend dapat dijangkau tanpa mengungkap secret.
+
+Jangan menganggap semua error `NOT_FOUND` berasal dari URL. Periksa respons lengkap dan log untuk membedakan route tidak ada, resource tidak ditemukan, dan kesalahan dari upstream API.
+
+## Bug 4 — TOO_MANY_REGISTRATIONS
+
+Gejala:
+Error `TOO_MANY_REGISTRATIONS` pernah muncul selama pengembangan.
+
+Jangan langsung menyimpulkan bahwa penyebabnya adalah kuota request ongkir. Error ini harus ditelusuri dari sumber yang benar.
+
+Solusi:
+1. Catat layanan/endpoint yang mengeluarkan error.
+2. Periksa apakah error berasal dari Firebase Authentication, Cloud Functions, RajaOngkir, atau layanan lain.
+3. Periksa status HTTP, response body, waktu kejadian, dan log server tanpa mencatat secret.
+4. Jika berasal dari alur registrasi Firebase, periksa frekuensi pembuatan akun, konfigurasi Authentication, dan batas layanan terkait.
+5. Jika berasal dari API atau backend, ikuti makna error yang sebenarnya berdasarkan dokumentasi layanan tersebut.
+6. Jangan membuat akun berulang untuk menguji koneksi.
+7. Jangan melakukan retry tanpa batas.
+8. Untuk pencarian wilayah, terapkan debounce dan cache agar ketikan pengguna tidak memicu request berlebihan.
+9. Untuk kalkulasi ongkir, cegah klik berulang saat request masih berjalan.
+10. Jika ditemukan rate limit, tampilkan pesan dan terapkan retry terbatas sesuai ketentuan layanan.
+
+Jangan mengganti error ini dengan pesan sukses palsu.
+
+## Bug 5 — Layanan JagoPack atau SPX-Hemat tidak ditemukan
+
+Gejala:
+Respons diagnostik yang pernah diuji tidak mengembalikan layanan Lion JagoPack atau SPX-Hemat.
+
+Solusi:
+1. Ambil dan periksa raw response API.
+2. Cocokkan kode dan nama layanan asli.
+3. Jangan memetakan `REGPACK` menjadi JagoPack.
+4. Jangan memetakan `SPX Standard` menjadi SPX-Hemat.
+5. Gunakan nama layanan yang benar-benar dikembalikan API.
+6. Bedakan layanan yang tidak dikembalikan dari API error.
+7. Jangan mengarang tarif atau estimasi.
+8. Pertahankan daftar UI yang telah disepakati: Wahana Ekonomis, Lion REGPACK, SPX Standard, dan Kurir Toko.
+
+## Bug 6 — Respons API tidak valid atau tarif/ETD kosong
+
+Solusi:
+- Periksa HTTP status dan struktur JSON.
+- Jangan hanya memeriksa apakah body respons tidak kosong.
+- Validasi keberadaan array/data layanan sesuai kontrak API.
+- Tangani tarif kosong, estimasi `-`, dan deskripsi yang tidak tersedia tanpa crash.
+- Jangan mengubah ETD yang tidak diketahui menjadi angka perkiraan.
+- Jangan menampilkan tarif nol sebagai ongkir gratis kecuali API secara eksplisit mengembalikan nilai yang memang berarti nol.
+- Simpan raw response diagnostik di server hanya jika diperlukan, dengan penyamaran data sensitif dan pembatasan akses.
+
+# L. LOGGING DAN DIAGNOSTIK
+
+Buat diagnostik yang membantu menemukan akar masalah.
+
+Catat secukupnya:
+- Waktu request.
+- Nama function/backend handler.
+- ID asal dan tujuan.
+- Berat.
+- Provider yang diminta.
+- HTTP status upstream.
+- Status internal hasil.
+- Durasi request.
+- Pesan error yang aman.
+
+Jangan pernah mencatat:
+- API key.
+- Password.
+- Token autentikasi.
+- Cookie sesi.
+- Secret environment.
+
+Untuk masalah tarif salah, sediakan cara membandingkan:
+1. Parameter dari frontend.
+2. Parameter yang diterima backend.
+3. Parameter yang dikirim ke RajaOngkir.
+4. Raw response yang sudah disanitasi.
+5. Hasil normalisasi yang dikembalikan ke UI.
+
+Pastikan diagnostik hanya dapat diakses oleh pengguna berwenang atau melalui log server.
+
+# M. CACHE, DEBOUNCE, DAN KUOTA
+
+Terapkan optimasi dengan benar.
+
+- Debounce pencarian destinasi.
+- Cache data wilayah yang relatif statis.
+- Cache hasil ongkir hanya jika memang dibutuhkan dan aman.
+- Gunakan cache key yang memasukkan seluruh parameter penting.
+- Jangan menggunakan hasil lama ketika tujuan atau berat berubah.
+- Jangan memicu kalkulasi ongkir otomatis setiap kali pengguna mengetik alamat.
+- Cegah request duplikat saat pengguna menekan tombol berulang kali.
+- Terapkan timeout.
+- Retry hanya untuk kegagalan sementara yang layak dicoba ulang.
+- Jangan retry terus-menerus untuk error autentikasi atau input tidak valid.
+- Patuhi kuota dan batas paket akun aktif.
+- Jangan menjalankan load test besar pada API produksi.
+
+# N. PENGUJIAN WAJIB
+
+Lakukan pengujian bertahap.
+
+## Tahap 1 — Build dan pemeriksaan statis
+- Pastikan frontend build.
+- Pastikan backend/function build.
+- Pastikan tidak ada error type-check/lint yang relevan.
+- Pastikan tidak ada API key yang masuk ke bundle frontend.
+
+## Tahap 2 — Tes unit
+Uji:
+- Validasi berat.
+- Validasi ID asal/tujuan.
+- Parser respons API.
+- Mapping layanan.
+- Tarif dan ETD kosong.
+- Respons API error.
+- Respons JSON invalid.
+- Hasil layanan kosong.
+- Cache key untuk tujuan berbeda.
+- Pencegahan false mapping.
+
+## Tahap 3 — Tes integrasi backend
+Uji endpoint internal dengan data valid dan invalid.
+Pastikan autentikasi dan otorisasi diterapkan.
+Pastikan error upstream dipetakan menjadi response internal yang jelas.
+
+## Tahap 4 — Tes API asli
+Gunakan API key valid dari konfigurasi server dan rute yang diketahui.
+Pastikan:
+- Destinasi benar-benar sesuai ID yang dipilih.
+- Berat yang dikirim sesuai.
+- Provider yang diminta benar.
+- Raw response diterima.
+- Tarif dan estimasi ditampilkan sesuai respons API.
+- Jika layanan tidak tersedia, UI menyatakan tidak tersedia, bukan mengganti layanan.
+
+Lakukan request sesedikit mungkin selama tes.
+
+## Tahap 5 — Tes regresi
+Pastikan:
+- Login dan role tidak rusak.
+- Menu web lain tetap berjalan.
+- Pengaturan WMS yang sudah ada tidak hilang.
+- Tidak ada perubahan pada `firestore.rules`.
+- Tidak ada perubahan tak terkait pada Firebase Authentication.
+- Tidak ada hardcode tarif.
+- Tidak ada API key pada frontend.
+- Empat pilihan jasa kirim sesuai kesepakatan.
+
+## Tahap 6 — Verifikasi running
+Jalankan aplikasi pada lingkungan pengembangan yang tersedia.
+Jika diperlukan deployment, siapkan langkah dan perintah yang tepat untuk platform aktual project.
+
+Jangan melakukan deploy produksi, mengubah secret produksi, atau mengubah konfigurasi keamanan tanpa menjelaskan dampaknya terlebih dahulu.
+
+Jika Gemini tidak memiliki akses langsung untuk menjalankan API asli karena kredensial atau lingkungan belum tersedia, nyatakan dengan jelas tes mana yang belum dijalankan dan berikan langkah manual yang spesifik. Jangan mengklaim fitur sudah running sepenuhnya.
+
+# O. DEFINISI SELESAI
+
+Pekerjaan baru dianggap selesai jika:
+
+1. UI cek ongkir dapat dibuka.
+2. Alamat asal dan tujuan dapat dipilih dengan ID wilayah yang benar.
+3. Total berat dihitung dan divalidasi.
+4. Backend menerima request dengan autentikasi yang benar.
+5. API key tetap berada di server.
+6. Backend berhasil memanggil RajaOngkir dengan format yang benar.
+7. Hasil ongkir nyata ditampilkan pada UI.
+8. Error API dan layanan yang tidak tersedia ditangani dengan jelas.
+9. Bug tarif sama untuk destinasi berbeda telah diuji pencegahannya.
+10. Pencarian wilayah tidak membuat request berlebihan.
+11. Build dan tes yang relevan berhasil atau kegagalannya dilaporkan secara jujur.
+12. Tidak ada perubahan `firestore.rules` atau sistem autentikasi yang tidak diminta.
+13. Tidak ada perubahan tidak terkait pada modul lain.
+
+# P. FORMAT LAPORAN AKHIR
+
+Setelah selesai, berikan laporan dalam bahasa Indonesia:
+
+1. Ringkasan implementasi.
+2. Arsitektur yang akhirnya digunakan.
+3. Endpoint RajaOngkir yang benar-benar dipakai.
+4. File yang dibuat atau diubah.
+5. Cara mengatur API key dengan aman.
+6. Cara menjalankan frontend dan backend.
+7. Perintah build/test yang dijalankan.
+8. Hasil build dan setiap tes.
+9. Hasil tes API asli beserta rute yang diuji, tanpa menampilkan API key.
+10. Penanganan untuk setiap bug yang pernah terjadi.
+11. Hal yang belum dapat diuji.
+12. Langkah manual yang masih harus dilakukan pemilik project.
+13. Konfirmasi bahwa `firestore.rules` dan autentikasi tidak diubah.
+
+Jangan menulis “berhasil running” jika hanya source code selesai dibuat. Jelaskan secara spesifik apakah baru berhasil build, berhasil menjalankan backend lokal, atau sudah terbukti mendapatkan respons ongkir asli dari RajaOngkir.
+
+Mulai sekarang dengan audit repository web-portal WMS Atin’s Coll, kemudian implementasikan fitur ini dari awal sampai berjalan tanpa melanggar batasan di atas.
+
+# ADDENDUM MASTER PROMPT — HEMAT KUOTA API DAN PENGATURAN TOKO
+
+Terapkan ketentuan tambahan berikut sebagai bagian wajib dari integrasi cek ongkir RajaOngkir pada web-portal WMS Atin’s Coll.
+
+Jangan mengulang pembangunan dari awal jika implementasi sebelumnya sudah tersedia. Periksa hasil pekerjaan yang ada dan lakukan perubahan incremental pada bagian yang diperlukan.
+
+## 1. BATASAN KUOTA RAJAONGKIR
+
+Kuota API RajaOngkir yang tersedia adalah 100 hit per hari. Karena itu, pengembangan dan pengujian harus sangat hemat request.
+
+Ketentuan wajib:
+
+1. Jangan melakukan load test atau pengujian berulang terhadap API asli.
+2. Jangan memanggil API setiap kali pengguna mengetik karakter pada kolom pencarian.
+3. Gunakan debounce, tetapi jangan menganggap debounce saja cukup untuk menghemat kuota.
+4. Hindari request duplikat dengan parameter yang sama.
+5. Cache data wilayah dan hasil pemeriksaan yang sesuai, dengan masa berlaku yang wajar.
+6. Cache hasil ongkir harus menggunakan key yang mempertimbangkan seluruh parameter yang memengaruhi hasil, seperti asal, tujuan, berat, dan kurir.
+7. Jangan menggunakan cache hasil ongkir jika parameter request berubah.
+8. Jangan memanggil ulang API hanya untuk menampilkan kembali hasil yang sudah tersimpan dan masih layak digunakan.
+9. Jangan otomatis memeriksa ongkir ketika halaman dibuka, ketika state UI berubah, atau ketika pengguna berpindah menu.
+10. Pemeriksaan ongkir hanya dilakukan saat memang dibutuhkan, misalnya ketika pengguna menekan tombol “Cek Ongkir”.
+11. Cegah klik ganda selama request masih berjalan.
+12. Jangan menerapkan retry otomatis tanpa batas.
+13. Jangan menguji semua provider dan semua destinasi secara massal.
+14. Jangan melakukan request API asli hanya untuk memverifikasi perubahan tampilan UI.
+15. Untuk unit test dan sebagian besar integration test, gunakan mock response atau fixture yang disanitasi. Mock hanya untuk pengujian, tidak boleh menjadi hasil ongkir produksi.
+16. Pengujian API asli cukup dilakukan sesedikit mungkin untuk membuktikan konfigurasi dan alur utama berfungsi.
+
+Sebelum menjalankan pengujian API asli, periksa apakah hasil pengujian yang diperlukan sudah tersedia dari request sebelumnya. Gunakan hasil tersebut bila masih relevan dan tidak perlu memanggil API lagi.
+
+### Batas pengujian yang disarankan
+
+- Unit test: gunakan mock; tidak memakai kuota API asli.
+- Build, lint, dan type-check: tidak memakai kuota API RajaOngkir.
+- Tes backend dengan fixture: tidak memakai kuota API RajaOngkir.
+- Tes koneksi API key: hanya satu request ringan yang sah menurut dokumentasi aktif, jika memungkinkan.
+- Tes cek ongkir end-to-end: lakukan satu request dengan rute valid setelah konfigurasi disetujui, lalu gunakan hasil yang sama untuk memeriksa rendering UI.
+- Request tambahan hanya dilakukan jika request sebelumnya gagal dan ada alasan jelas untuk mengulanginya.
+
+Angka di atas adalah batas proses pengujian yang disarankan, bukan jaminan bahwa setiap endpoint hanya dihitung satu hit oleh penyedia API.
+
+### Perlindungan tambahan terhadap kuota
+
+Jika memungkinkan berdasarkan arsitektur yang sudah ada:
+- Buat cache server-side agar beberapa pengguna tidak mengulang request identik secara bersamaan.
+- Terapkan deduplikasi request yang sedang berjalan.
+- Berikan indikator ketika hasil berasal dari cache.
+- Catat jumlah request upstream yang benar-benar dilakukan oleh backend, tanpa mencatat API key.
+- Jangan menampilkan perkiraan sisa kuota sebagai angka pasti jika informasi tersebut tidak diberikan oleh API.
+
+Jangan membuat endpoint tambahan yang memanggil RajaOngkir hanya untuk mengukur kuota atau memeriksa status layanan jika tidak diperlukan.
+
+## 2. PENGATURAN TOKO
+
+Tempatkan konfigurasi cek ongkir pada menu **Pengaturan Toko**, mengikuti struktur navigasi dan desain web-portal yang sudah ada.
+
+Pengaturan ini setidaknya mencakup dua bagian:
+
+### A. Alamat Pengiriman / Asal Pengiriman
+
+Simpan alamat asal yang digunakan sebagai titik awal perhitungan ongkir.
+
+Data yang diperlukan mengikuti format API aktif, dan dapat mencakup:
+- Provinsi.
+- Kabupaten/Kota.
+- Kecamatan.
+- Desa/Kelurahan, jika didukung dan diperlukan oleh API.
+- ID atau kode destinasi yang benar dari API.
+- Nama wilayah.
+- Alamat jalan atau detail lokasi toko jika dibutuhkan untuk informasi internal.
+
+Jangan menyimpan nama wilayah saja jika API membutuhkan ID destinasi.
+
+Ketentuan:
+1. ROOT_ADMIN dapat mengatur dan menyimpan alamat asal.
+2. Pengguna biasa tidak boleh mengubah pengaturan yang dibatasi untuk ROOT_ADMIN.
+3. Gunakan pencarian wilayah API yang sudah tersedia.
+4. Hindari memanggil API berulang saat membuka halaman pengaturan.
+5. Simpan ID dan nama wilayah yang valid.
+6. Validasi alamat sebelum digunakan dalam perhitungan ongkir.
+7. Jangan mengganti alamat asal yang tersimpan apabila pilihan wilayah baru belum valid atau belum dikonfirmasi.
+8. Setelah alamat berhasil disimpan, gunakan konfigurasi tersebut pada permintaan ongkir berikutnya.
+9. Perubahan alamat asal tidak boleh diam-diam menghitung ulang snapshot ongkir pada SO lama.
+
+Jika web-portal sudah memiliki pengaturan alamat toko, integrasikan dengan data yang ada. Jangan membuat sumber alamat kedua yang saling bertentangan.
+
+### B. Pengaturan API RajaOngkir
+
+Gunakan mekanisme pengaturan API yang konsisten dengan aplikasi Android WMS Atin’s Coll.
+
+Sebelum mengimplementasikan, periksa source code Android yang tersedia atau implementasi terkait untuk memahami alur yang digunakan. Jika source Android tidak tersedia di repository web, ikuti perilaku yang dijelaskan dalam spesifikasi ini. Jangan mengklaim telah menyalin implementasi Android secara persis tanpa memeriksanya.
+
+Pengaturan API harus memiliki:
+- Input API key.
+- Tombol “Uji Koneksi”.
+- Status hasil pengujian.
+- Tombol “Konfirmasi dan Simpan API Key”.
+- Indikator jika perubahan API key belum disimpan.
+
+API key harus diproses dan disimpan dengan aman di sisi backend.
+
+## 3. ALUR PERUBAHAN API KEY — WAJIB DIIKUTI
+
+Implementasikan alur berikut dengan jelas.
+
+### Langkah 1 — Input API key baru
+
+ROOT_ADMIN memasukkan API key baru pada halaman Pengaturan Toko.
+
+Pada tahap ini:
+- API key baru hanya berada dalam state sementara untuk proses pengujian.
+- API key aktif yang sedang dipakai aplikasi tidak boleh ditimpa.
+- Jangan langsung menyimpan API key baru ke konfigurasi aktif.
+- Jangan menampilkan API key lengkap setelah proses penyimpanan.
+- Jangan mengirim API key ke browser selain yang benar-benar diperlukan untuk proses pengujian melalui mekanisme aman. Utamakan pengiriman langsung ke endpoint backend yang dilindungi HTTPS, lalu backend yang melakukan pengujian ke RajaOngkir.
+
+### Langkah 2 — Tombol “Uji Koneksi”
+
+Saat ROOT_ADMIN menekan “Uji Koneksi”:
+
+1. Backend memvalidasi autentikasi dan role ROOT_ADMIN.
+2. Backend menerima key sementara melalui koneksi HTTPS.
+3. Backend melakukan satu request pengujian yang sah dan ringan menggunakan API key baru.
+4. Backend memeriksa HTTP status, format respons, dan indikasi keberhasilan autentikasi.
+5. Hasil pengujian dikembalikan ke UI.
+6. API key aktif yang lama tetap dipertahankan sampai proses konfirmasi dan penyimpanan berhasil.
+
+Jangan menggunakan request yang mahal atau melakukan beberapa request sekaligus untuk menguji satu API key.
+
+Jika tidak tersedia endpoint khusus untuk uji koneksi, gunakan satu endpoint ringan yang memang sah menurut dokumentasi aktif. Jelaskan bahwa hasil pengujian membuktikan akses endpoint yang diuji, bukan jaminan bahwa setiap layanan pengiriman tersedia.
+
+### Langkah 3 — Jika API key berhasil diuji
+
+Jika hasil pengujian menyatakan API dapat bekerja:
+
+- Tampilkan pesan keberhasilan yang jelas.
+- Tampilkan dialog konfirmasi dengan tombol **OK**.
+- Contoh pesan: “Koneksi RajaOngkir berhasil. API key baru dapat digunakan. Tekan OK untuk melanjutkan ke konfirmasi penyimpanan.”
+- Setelah ROOT_ADMIN menekan OK, tutup dialog hasil dan tandai API key sementara sebagai `TEST_SUCCESS`.
+- Aktifkan tombol **“Konfirmasi dan Simpan API Key”**.
+- Jangan mengganti API key aktif secara otomatis hanya karena pengujian berhasil.
+
+Tombol OK pada dialog hasil pengujian hanya mengakui pesan dan melanjutkan alur. Tombol tersebut bukan pengganti tombol penyimpanan akhir.
+
+### Langkah 4 — Jika API key gagal diuji
+
+Jika request pengujian gagal karena API key salah, tidak memiliki izin, atau autentikasi ditolak:
+
+- Tampilkan pesan kegagalan yang jelas.
+- Berikan informasi aman yang membantu diagnosis, seperti kategori error atau HTTP status.
+- Jangan tampilkan secret atau informasi sensitif.
+- Jangan menimpa API key aktif.
+- Jangan menghapus API key aktif yang lama.
+- Jangan menandai key baru sebagai `TEST_SUCCESS`.
+- Tombol **“Konfirmasi dan Simpan API Key” harus tetap disabled**.
+- Pengguna dapat memperbaiki input lalu menguji ulang jika memang diperlukan.
+- Jangan melakukan retry otomatis berkali-kali.
+
+Jika kegagalan disebabkan gangguan jaringan, timeout, atau server error, perlakukan sebagai hasil pengujian yang tidak berhasil. Jangan mengizinkan penyimpanan melalui alur normal hanya karena error tersebut mungkin bersifat sementara.
+
+### Langkah 5 — Tombol “Konfirmasi dan Simpan API Key”
+
+Tombol ini berada di bawah bagian input dan hasil pengujian.
+
+Aturan tombol:
+- Disabled secara default.
+- Hanya ROOT_ADMIN yang dapat menggunakannya.
+- Hanya aktif jika API key sementara yang saat ini dimasukkan telah lulus pengujian.
+- Jika input API key berubah setelah pengujian, hasil pengujian lama langsung dianggap tidak berlaku dan tombol kembali disabled.
+- Jika pengujian berlangsung, tombol disabled.
+- Jika pengujian gagal, tombol disabled.
+- Jika API key kosong, tombol disabled.
+- Jika hasil pengujian tidak diketahui, tombol disabled.
+
+Saat tombol diklik:
+1. Backend memvalidasi ulang autentikasi dan role ROOT_ADMIN.
+2. Backend memastikan pengujian berhasil untuk API key yang sama dengan yang akan disimpan.
+3. Backend menolak penyimpanan jika key yang dikonfirmasi berbeda dari key yang diuji.
+4. Backend menyimpan API key baru secara aman.
+5. Backend memverifikasi bahwa proses penyimpanan berhasil tanpa menampilkan secret.
+6. Setelah penyimpanan berhasil, konfigurasi aktif diperbarui.
+7. UI menampilkan notifikasi bahwa API key baru berhasil disimpan.
+8. API key lama hanya diganti setelah penyimpanan baru benar-benar berhasil.
+
+Jangan hanya mengandalkan state tombol frontend. Validasi status pengujian dan hak akses harus dilakukan kembali di backend.
+
+Gunakan mekanisme pengikatan pengujian dengan key yang sama, misalnya token pengujian sementara atau fingerprint/hash yang aman, agar hasil uji key A tidak dapat digunakan untuk menyimpan key B. Jangan menyimpan key plaintext di log atau basis data sementara yang tidak aman.
+
+Jika penyimpanan gagal, pertahankan konfigurasi aktif yang lama dan tampilkan pesan kegagalan.
+
+## 4. STATE UI YANG DISARANKAN
+
+Sesuaikan dengan pola framework web, tetapi pastikan semua kondisi berikut tertangani:
+
+- `IDLE`: belum diuji.
+- `TESTING`: pengujian sedang berlangsung.
+- `TEST_SUCCESS`: key yang saat ini dimasukkan telah lulus pengujian.
+- `TEST_FAILED`: pengujian gagal.
+- `SAVING`: penyimpanan sedang berlangsung.
+- `SAVE_SUCCESS`: key baru berhasil disimpan.
+- `SAVE_FAILED`: penyimpanan gagal.
+
+Ketentuan penting:
+- Perubahan input key membatalkan `TEST_SUCCESS`.
+- Tombol konfirmasi penyimpanan hanya aktif pada `TEST_SUCCESS`.
+- Jangan menganggap key tersimpan sebelum backend menyatakan penyimpanan berhasil.
+- Jangan menyimpan state `TEST_SUCCESS` secara permanen di browser agar dapat digunakan kembali tanpa pengujian baru.
+- Jika halaman di-refresh atau sesi berubah, jangan menganggap key baru telah diuji.
+- Hindari race condition ketika pengguna mengganti key saat request pengujian masih berlangsung.
+
+## 5. PENGUJIAN FITUR PENGATURAN TANPA MEMBOROSKAN KUOTA
+
+Gunakan mock untuk menguji seluruh alur UI:
+- Input key.
+- Pengujian sukses.
+- Dialog OK.
+- Tombol konfirmasi menjadi aktif.
+- Input key berubah dan tombol kembali disabled.
+- Pengujian gagal dan tombol tetap disabled.
+- Penyimpanan sukses.
+- Penyimpanan gagal dan key aktif lama tetap berlaku.
+- Pengguna bukan ROOT_ADMIN tidak dapat mengakses endpoint pengaturan.
+
+Mock tidak boleh dipakai sebagai bukti bahwa API key asli valid.
+
+Untuk tes API asli, cukup gunakan satu request yang sah untuk menguji key sementara. Jika berhasil, lanjutkan dengan konfirmasi UI dan simpan key. Jangan mengulang request yang sama hanya untuk memeriksa tampilan tombol.
+
+## 6. TES REGRESI DAN LAPORAN
+
+Pastikan:
+- Kuota tidak dipakai untuk unit test dan tes UI.
+- Tidak ada request otomatis berulang saat halaman dibuka.
+- Tidak ada request pencarian wilayah pada setiap karakter tanpa debounce.
+- API key aktif tidak berubah ketika pengujian gagal.
+- API key aktif baru berubah setelah konfirmasi dan penyimpanan berhasil.
+- Tombol konfirmasi disabled pada seluruh kondisi selain hasil uji yang valid untuk key yang sama.
+- Alamat asal hanya berubah setelah disimpan dengan data wilayah yang valid.
+- Snapshot ongkir SO lama tidak dihitung ulang.
+- Aturan COD tidak berubah.
+- `firestore.rules` dan sistem autentikasi tidak diubah tanpa instruksi eksplisit.
+- Tidak ada secret di frontend, log, atau laporan.
+
+Dalam laporan akhir, jelaskan:
+1. Cara penghematan kuota diterapkan.
+2. Jumlah request API asli yang benar-benar dilakukan selama pengujian.
+3. Endpoint yang dipanggil saat uji API key.
+4. Perilaku saat uji sukses, uji gagal, dan penyimpanan gagal.
+5. File yang diubah.
+6. Hasil build dan tes.
+7. Hal yang belum terverifikasi.
+
+Jangan mengeklaim bahwa kuota pasti aman hanya karena debounce diterapkan. Jelaskan mekanisme nyata yang mencegah request berulang dan hasil pengujian yang benar-benar dilakukan.
+
+- alamat toko wajib di setting terlebih dahulu pada menu pengaturan. jangan input manual namun harus berdasarkan database kewilayahan di Indonesia.
+- proses input alamat diawali dengan input provinsi -> Kabupaten/Kota -> Kecamatan -> Desa/Kelurahan
+- tambahkan box detail alamat.
+- ambil database kweilayahan dari sumber terpercaya.
+
+logic setting API key di menu pengaturan toko
+- logic setting API samakan seperti android.
+- input API key, cek dahulu apakah API bisa bekerja atau tidak
+- jika bisa bekerja, maka konfirmasi bahwa API bisa bekerja dengan tombol OK.
+- Jika tidak bisa bekerja, maka jangan ubah dahulu API key.
+- berikan tombol konfirmasi dibawah untuk menyetujui perubahan API key jika dapat bekerja. jika tidak, maka tombol konfirmasi disable.
+
+pada halaman SO, tampilkan semua SO yang ada. sediakan filter status saja untuk memudahkan sorting.
+untuk tombol processing, Ketika ditekan berikan alert untuk mengkonfirmasi perubahan status SO.
+pada SO, sediakan tombol share whastapp yang merangkum isi SO. berikut format nya :
+
+SALES ORDER
+SO-20261008-00011
+
+Customer: 
+Alamat: 
+1. GAMIS MIDI ALISHA
+   Qty: 1 pcs
+   Harga: Rp95.000,00
+   Subtotal: Rp95.000,00
+-------------------------
+Total Item: 
+Total Berat: 
+Subtotal Produk: 
+Total Tagihan: 
+
+pada menu buat sales order, gunakan searchbox untuk menambahkan produk. jangan menggunakan dropdown. tidak usah ada box Harga SO. edit Harga bisa dilakukan Ketika barang sudah ditambahkan untuk memastikan snapshot dilakukan. 
