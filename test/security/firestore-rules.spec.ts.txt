@@ -1,0 +1,140 @@
+import {
+  assertFails,
+  assertSucceeds,
+  initializeTestEnvironment,
+  RulesTestEnvironment,
+} from "@firebase/rules-unit-testing";
+import * as fs from "fs";
+import * as path from "path";
+
+const PROJECT_ID = "wms-atins-collection-test";
+
+describe("WMS Atin's Collection — Firestore Security Rules Audit", () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    // Membaca rules baseline secara read-only
+    const rulesPath = path.resolve(__dirname, "../../firestore.rules");
+    const rules = fs.readFileSync(rulesPath, "utf8");
+
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        rules: rules,
+        host: "127.0.0.1",
+        port: 8080,
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await testEnv.cleanup();
+  });
+
+  beforeEach(async () => {
+    await testEnv.clearFirestore();
+
+    // Setup dataset dummy awal menggunakan Admin Context (Bypass rules)
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      
+      // Setup role profil
+      await db.collection("users").doc("staff_01").set({
+        username: "staff01",
+        role: "STAFF_GUDANG",
+        active: true,
+      });
+      await db.collection("users").doc("admin_01").set({
+        username: "admin01",
+        role: "ADMIN_GUDANG",
+        active: true,
+      });
+
+      // Setup master produk dummy
+      await db.collection("products").doc("SKU-TEST-001").set({
+        sku: "SKU-TEST-001",
+        itemName: "Gamis Test Model A",
+        stock: 10,
+        purchasingPrice: 75000, // HPP
+        netPrice: 125000,
+        active: true,
+      });
+
+      // Setup SO locked dummy
+      await db.collection("sales_orders").doc("SO-TEST-LOCK").set({
+        soId: "SO-TEST-LOCK",
+        status: "DELIVERY ORDER",
+        total: 125000,
+        createdBy: "staff01",
+      });
+    });
+  });
+
+  // =========================================================================
+  // SKENARIO A: AKSES TANPA AUTENTIKASI
+  // =========================================================================
+  describe("A. Akses Tanpa Autentikasi", () => {
+    it("SEC-01: Anonymous dilarang membaca data produk privat dan konfigurasi", async () => {
+      const unauthDb = testEnv.unauthenticatedContext().firestore();
+      await assertFails(unauthDb.collection("products").doc("SKU-TEST-001").get());
+      await assertFails(unauthDb.collection("settings").doc("store_info").get());
+    });
+
+    it("SEC-02: Anonymous dilarang menulis ke koleksi stock_movements", async () => {
+      const unauthDb = testEnv.unauthenticatedContext().firestore();
+      await assertFails(
+        unauthDb.collection("stock_movements").add({
+          itemCode: "SKU-TEST-001",
+          qtyOut: 5,
+          type: "DELIVERY",
+        })
+      );
+    });
+  });
+
+  // =========================================================================
+  // SKENARIO B: ESKALASI HAK AKSES & PRIVILEGE
+  // =========================================================================
+  describe("B. Eskalasi Hak Akses", () => {
+    it("SEC-03: STAFF_GUDANG dilarang mengubah role dirinya sendiri menjadi ROOT_ADMIN", async () => {
+      const staffDb = testEnv.authenticatedContext("staff_01", { role: "STAFF_GUDANG" }).firestore();
+      await assertFails(
+        staffDb.collection("users").doc("staff_01").update({
+          role: "ROOT_ADMIN",
+        })
+      );
+    });
+
+    it("SEC-04: STAFF_GUDANG dilarang mengubah Purchasing Price (HPP) produk", async () => {
+      const staffDb = testEnv.authenticatedContext("staff_01", { role: "STAFF_GUDANG" }).firestore();
+      await assertFails(
+        staffDb.collection("products").doc("SKU-TEST-001").update({
+          purchasingPrice: 50000, // Upaya manipulasi HPP
+        })
+      );
+    });
+  });
+
+  // =========================================================================
+  // SKENARIO D: MANIPULASI FIELD & VALIDASI DATA
+  // =========================================================================
+  describe("D. Validasi Data & Integritas Status", () => {
+    it("SEC-06: Database harus menolak jika stok fisik diubah menjadi negatif", async () => {
+      const adminDb = testEnv.authenticatedContext("admin_01", { role: "ADMIN_GUDANG" }).firestore();
+      await assertFails(
+        adminDb.collection("products").doc("SKU-TEST-001").update({
+          stock: -1, // Upaya injeksi stok negatif
+        })
+      );
+    });
+
+    it("SEC-08: Pengguna dilarang mengubah Sales Order yang sudah berstatus DELIVERY ORDER", async () => {
+      const staffDb = testEnv.authenticatedContext("staff_01", { role: "STAFF_GUDANG" }).firestore();
+      await assertFails(
+        staffDb.collection("sales_orders").doc("SO-TEST-LOCK").update({
+          status: "CONFIRMED", // Ilegal rollback state
+        })
+      );
+    });
+  });
+});

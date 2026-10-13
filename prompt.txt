@@ -999,3 +999,15 @@ item yang dapat di edit/ubah :
 bisa kamu pecah modul/modal dan function yang ada menjadi beberapa file untuk memudahkan proses debugging ? aku rasa ini sudah terlalu banyak modul/modal dan function yang ada. jika bisa, pecah dalam beberapa file. pecah file secara proporsional sesuai stadar industry lalu lakukan kofigurasi ulang sehingga semua modul dan function bisa berjalan normal
 
 pada menu purchase order dan receiving, buatkan menu untuk create PO dengan bussiness logic yang sama dengan android apps. namun untuk input qty bisa disesuaikan dengan kebutuhan. buatkan juga sub menu receiving untuk proses penerimaan barang. jika barang yang diinput pada receiving kurang maka barang dapat diterima dan PO dinyatakan selesai. jika lebih maka PO tidak dapat diterima dan harus di cek kembali. berikan alert beserta qty yang telah di input untuk konfirmasi. buatkan juga pada modul terpisah untuk memudahkan jika ada bug.
+
+untuk menu laporan sediakan di setiap menu tombol untuk generate report ke excel maupun pdf. generate report sesuaidengan parameter yang telah di input seperti tanggal maupun filter
+
+sekarang aku ingin apps ada notifikasi setiap kali ada task baru, baik itu dari apps maupun dari web-portal. jika ada SO confirmed, SO Processing, SO Ready to Deliver, DO, Adj, PO, Receiving, SOP, dan Penambahan user baru. untuk format notifikasinya seperti berikut :
+SO : Sales Order confirmed dengan nomor SO-xxxxxxxx-xxxx dibuat oleh (user yang sedang login)
+SO : Sales Order processing dengan nomor SO-xxxxxxxx-xxxx dibuat oleh (user yang sedang login)
+SO : Sales Order Ready to Deliver dengan nomor SO-xxxxxxxx-xxxx dibuat oleh (user yang sedang login)
+DO : Delivery Order dengan nomor DO-xxxxxxxx-xxxx dibuat oleh (user yang sedang login)
+Adj : Adjusment dengan nomor Adj-xxxxxxxx-xxxx dibuat oleh (user yang sedang login)
+PO : Purchasing Order dengan nomor PO-xxxxxxxx-xxxx dibuat oleh (user yang sedang login)
+Receiving : Receiving nomor RCV-xxxxxxxx-xxxx dibuat oleh (user yang sedang login)
+SOP : Initialized Stock Opname dengan nomor SOP-xxxxxxxx-xxxx dibuat oleh (user yang sedang login) siap untuk memulai counting

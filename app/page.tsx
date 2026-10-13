@@ -21,8 +21,11 @@ import StockOpnameModal from "@/components/modals/StockOpnameModal";
 import SalesOrderModal from "@/components/modals/SalesOrderModal";
 import CreatePurchaseOrderModal from "@/components/modals/CreatePurchaseOrderModal";
 import ReceivingModal from "@/components/modals/ReceivingModal";
+import ReportExportControls from "@/components/reports/ReportExportControls";
+import NotificationBell from "@/components/notifications/NotificationBell";
+import { createOperationalNotification } from "@/lib/notifications";
 
-type MainTab = "dashboard" | "sales" | "inventory" | "purchase" | "reports" | "settings";
+type MainTab = "dashboard" | "sales" | "inventory" | "purchase" | "reports" | "settings" | "users";
 
 interface RegionItem {
   id: string;
@@ -47,6 +50,7 @@ export default function Page() {
   const [stockOpnames, setStockOpnames] = useState<any[]>([]);
   const [stockAdjustments, setStockAdjustments] = useState<any[]>([]);
   const [stockMovements, setStockMovements] = useState<any[]>([]);
+  const [usersList, setUsersList] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>("");
 
@@ -70,14 +74,13 @@ export default function Page() {
     defaultOriginId: 4997,
   });
 
-  // Wilayah
+  // Wilayah & API Key
   const [provinces, setProvinces] = useState<RegionItem[]>([]);
   const [regencies, setRegencies] = useState<RegionItem[]>([]);
   const [districts, setDistricts] = useState<RegionItem[]>([]);
   const [villages, setVillages] = useState<RegionItem[]>([]);
   const [loadingRegion, setLoadingRegion] = useState(false);
 
-  // API Key
   const [inputApiKey, setInputApiKey] = useState("");
   const [apiKeyTestedSuccess, setApiKeyTestedSuccess] = useState(false);
   const [testedToken, setTestedToken] = useState<string | null>(null);
@@ -129,15 +132,15 @@ export default function Page() {
   const [isEditExpeditionModalOpen, setIsEditExpeditionModalOpen] = useState(false);
   const [targetProcessingSo, setTargetProcessingSo] = useState<any | null>(null);
 
-  // PO & Receiving Modal State
+  // PO & Receiving
   const [isCreatePoModalOpen, setIsCreatePoModalOpen] = useState(false);
   const [isReceivingModalOpen, setIsReceivingModalOpen] = useState(false);
   const [selectedPoForReceiving, setSelectedPoForReceiving] = useState<any | null>(null);
+  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+  const [userForm, setUserForm] = useState({ fullName: "", userId: "", password: "" });
 
-  // Logout Confirm State
+  // Logout & Cancellation
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
-
-  // Kartu Stok & Pembatalan
   const [ledgerSearch, setLedgerSearch] = useState("");
   const [selectedProductLedger, setSelectedProductLedger] = useState<any | null>(null);
   const [sopCancelTarget, setSopCancelTarget] = useState<any | null>(null);
@@ -148,8 +151,10 @@ export default function Page() {
   const [poCancelReason, setPoCancelReason] = useState("");
   const [isPoCancelConfirmOpen, setIsPoCancelConfirmOpen] = useState(false);
 
-  // Report Filter
+  // Report Filter State
   const [salesReportType, setSalesReportType] = useState<"day" | "item" | "summary">("summary");
+  const [reportStartDate, setReportStartDate] = useState<string>("");
+  const [reportEndDate, setReportEndDate] = useState<string>("");
 
   const router = useRouter();
 
@@ -159,9 +164,48 @@ export default function Page() {
     return userClean === "admin" || roleClean.includes("root");
   }, [currentUser]);
 
+  const isStaff = useMemo(() => {
+    const roleClean = String(currentUser.role || "").trim().toLowerCase();
+    return roleClean.includes("staff");
+  }, [currentUser]);
+
   const showAlert = (message: string, title = "Informasi") => {
     setAlertModal({ isOpen: true, title, message });
   };
+
+  function handleNavigateFromNotification(docType: string, docId: string) {
+    switch (docType) {
+      case "SO":
+        setCurrentTab("sales");
+        setSalesSubTab("so");
+        break;
+      case "DO":
+        setCurrentTab("sales");
+        setSalesSubTab("do");
+        break;
+      case "PO":
+        setCurrentTab("purchase");
+        setPoSubTab("po_list");
+        break;
+      case "RECEIVING":
+        setCurrentTab("purchase");
+        setPoSubTab("receiving_list");
+        break;
+      case "SOP":
+        setCurrentTab("inventory");
+        setInvSubTab("opname");
+        break;
+      case "ADJ":
+        setCurrentTab("inventory");
+        setInvSubTab("adjustment");
+        break;
+      case "USER":
+        if (isRootAdmin) setCurrentTab("users");
+        break;
+      default:
+        break;
+    }
+  }
 
   function handleExecuteLogout() {
     setIsLogoutConfirmOpen(false);
@@ -200,7 +244,7 @@ export default function Page() {
     setLoading(true);
     try {
       const [
-        pSnap, fSnap, cSnap, soSnap, doSnap, poSnap, rcvSnap, sopSnap, adjSnap, mvSnap, setDocSnap
+        pSnap, fSnap, cSnap, soSnap, doSnap, poSnap, rcvSnap, sopSnap, adjSnap, mvSnap, setDocSnap, uSnap
       ] = await Promise.all([
         getDocs(query(collection(db, "products"), limit(500))),
         getDocs(query(collection(db, "families"), limit(100))),
@@ -213,6 +257,7 @@ export default function Page() {
         getDocs(query(collection(db, "stock_adjustments"), limit(100))),
         getDocs(query(collection(db, "stock_movements"), limit(300))),
         getDocs(query(collection(db, "settings"), limit(1))),
+        getDocs(query(collection(db, "users"), limit(100))),
       ]);
 
       setProducts(pSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
@@ -225,6 +270,7 @@ export default function Page() {
       setStockOpnames(sopSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setStockAdjustments(adjSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setStockMovements(mvSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setUsersList(uSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
 
       const foundSettings = setDocSnap.docs.find((d) => d.id === "store_info");
       if (foundSettings) {
@@ -438,6 +484,50 @@ export default function Page() {
     }
   }
 
+  async function handleCreateUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak menambahkan user!", "Akses Ditolak");
+    if (!userForm.fullName.trim() || !userForm.userId.trim() || !userForm.password.trim()) {
+      return showAlert("Nama Lengkap, User ID, dan Password wajib diisi!", "Peringatan");
+    }
+
+    try {
+      setLoading(true);
+      const cleanId = userForm.userId.trim().toLowerCase();
+      const userRef = doc(db, "users", cleanId);
+
+      await setDoc(userRef, {
+        userId: cleanId,
+        username: cleanId,
+        fullName: userForm.fullName.trim(),
+        name: userForm.fullName.trim(),
+        password: userForm.password,
+        role: "Staff Gudang",
+        active: true,
+        createdAt: serverTimestamp(),
+        createdBy: currentUser.name,
+      });
+
+      setIsAddUserModalOpen(false);
+      setUserForm({ fullName: "", userId: "", password: "" });
+      await createOperationalNotification({
+        eventType: "USER_CREATED",
+        documentType: "USER",
+        documentId: cleanId,
+        documentNo: cleanId,
+        actorId: currentUser.id,
+        actorName: currentUser.name,
+        targetUserName: userForm.fullName.trim(),
+      });
+      showAlert(`User [${cleanId}] dengan role Staff Gudang berhasil didaftarkan!`, "Sukses");
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal mendaftarkan user baru.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleSaveProduct(savedData: any) {
     try {
       setLoading(true);
@@ -514,6 +604,7 @@ export default function Page() {
   }
 
   async function handleExecuteStockAdjustment(formData: any) {
+    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk melakukan Stock Adjustment!", "Akses Ditolak");
     try {
       setLoading(true);
       const prod = products.find((p) => p.sku === formData.sku);
@@ -583,6 +674,14 @@ export default function Page() {
       });
 
       setIsAdjModalOpen(false);
+      await createOperationalNotification({
+        eventType: "ADJ_CREATED",
+        documentType: "ADJ",
+        documentId: adjId,
+        documentNo: adjId,
+        actorId: currentUser.id,
+        actorName: currentUser.name,
+      });
       showAlert(`Penyesuaian stok [${adjId}] berhasil disimpan!`, "Sukses");
       loadAllData();
     } catch (err: any) {
@@ -593,6 +692,7 @@ export default function Page() {
   }
 
   async function handleConfirmInitSop(mode: "GENERAL" | "PARTIAL", partialList: any[], sopNotes: string) {
+    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk menginisialisasi Stock Opname!", "Akses Ditolak");
     try {
       setLoading(true);
       const activeCheck = stockOpnames.find((s) => ["OPEN", "COUNTING", "COUNTING_COMPLETED", "ADJUSTMENT"].includes(s.status));
@@ -666,6 +766,14 @@ export default function Page() {
       });
 
       setIsInitSopModalOpen(false);
+      await createOperationalNotification({
+        eventType: "SOP_INITIALIZED",
+        documentType: "SOP",
+        documentId: docNo,
+        documentNo: docNo,
+        actorId: currentUser.id,
+        actorName: currentUser.name,
+      });
       showAlert(`Stock Opname (${mode}) berhasil diinisialisasi: [${docNo}].`);
       loadAllData();
     } catch (err: any) {
@@ -736,6 +844,15 @@ export default function Page() {
           });
           return generatedSoId;
         });
+
+        await createOperationalNotification({
+          eventType: "SO_CONFIRMED",
+          documentType: "SO",
+          documentId: newSoId,
+          documentNo: newSoId,
+          actorId: currentUser.id,
+          actorName: currentUser.name,
+        });
         showAlert(`Sales Order [${newSoId}] berhasil dibuat (Status: CONFIRMED)!`);
       }
 
@@ -760,6 +877,14 @@ export default function Page() {
         status: "PROCESSING",
         updatedAt: serverTimestamp(),
         updatedBy: currentUser.name,
+      });
+      await createOperationalNotification({
+        eventType: "SO_PROCESSING",
+        documentType: "SO",
+        documentId: so.soId,
+        documentNo: so.soId,
+        actorId: currentUser.id,
+        actorName: currentUser.name,
       });
       showAlert(`Status SO [${so.soId}] berhasil diubah menjadi PROCESSING!`);
       loadAllData();
@@ -806,6 +931,14 @@ export default function Page() {
         status: "READY TO DELIVER",
         updatedAt: serverTimestamp(),
         updatedBy: currentUser.name,
+      });
+      await createOperationalNotification({
+        eventType: "SO_READY_TO_DELIVER",
+        documentType: "SO",
+        documentId: so.soId,
+        documentNo: so.soId,
+        actorId: currentUser.id,
+        actorName: currentUser.name,
       });
       showAlert(`SO [${so.soId}] berstatus READY TO DELIVER! Siap diterbitkan DO.`);
       loadAllData();
@@ -897,6 +1030,14 @@ export default function Page() {
         return generatedDoId;
       });
 
+      await createOperationalNotification({
+        eventType: "DO_CREATED",
+        documentType: "DO",
+        documentId: doId,
+        documentNo: doId,
+        actorId: currentUser.id,
+        actorName: currentUser.name,
+      });
       showAlert(`Delivery Order [${doId}] berhasil diterbitkan dan stok fisik terpotong!`);
       loadAllData();
     } catch (err: any) {
@@ -906,8 +1047,8 @@ export default function Page() {
     }
   }
 
-  // Create PO Handler
   async function handleCreatePurchaseOrder(payload: any) {
+    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk membuat PO!", "Akses Ditolak");
     try {
       setLoading(true);
       const today = new Date();
@@ -949,6 +1090,14 @@ export default function Page() {
       });
 
       setIsCreatePoModalOpen(false);
+      await createOperationalNotification({
+        eventType: "PO_CREATED",
+        documentType: "PO",
+        documentId: generatedPoId,
+        documentNo: generatedPoId,
+        actorId: currentUser.id,
+        actorName: currentUser.name,
+      });
       showAlert(`Purchase Order [${generatedPoId}] berhasil diterbitkan dengan status OPEN!`, "Sukses");
       loadAllData();
     } catch (err: any) {
@@ -958,8 +1107,8 @@ export default function Page() {
     }
   }
 
-  // Receiving Handler (PO COMPLETED jika kurang/pas)
   async function handleExecuteReceiving(payload: { po: any; receivedMap: Record<string, number>; notes: string }) {
+    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk melakukan receiving!", "Akses Ditolak");
     try {
       setLoading(true);
       const { po, receivedMap, notes } = payload;
@@ -1018,7 +1167,6 @@ export default function Page() {
           return it;
         });
 
-        // PO dinyatakan COMPLETED
         tx.update(poRef, {
           items: updatedPoItems,
           status: "COMPLETED",
@@ -1041,6 +1189,14 @@ export default function Page() {
 
       setIsReceivingModalOpen(false);
       setSelectedPoForReceiving(null);
+      await createOperationalNotification({
+        eventType: "RECEIVING_CREATED",
+        documentType: "RECEIVING",
+        documentId: payload.po.poId,
+        documentNo: payload.po.poId,
+        actorId: currentUser.id,
+        actorName: currentUser.name,
+      });
       showAlert(`Barang berhasil diterima dan Purchase Order [${payload.po.poId}] dinyatakan SELESAI (COMPLETED)!`, "Sukses");
       loadAllData();
     } catch (err: any) {
@@ -1051,6 +1207,7 @@ export default function Page() {
   }
 
   async function executeCancelSop() {
+    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk membatalkan Stock Opname!", "Akses Ditolak");
     if (!sopCancelTarget) return;
     if (!sopCancelReason.trim()) return showAlert("Alasan pembatalan Stock Opname wajib diisi!");
     setIsSopCancelConfirmOpen(false);
@@ -1090,6 +1247,7 @@ export default function Page() {
   }
 
   async function executeCancelPo() {
+    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk membatalkan PO!", "Akses Ditolak");
     if (!poCancelTarget) return;
     if (!poCancelReason.trim()) return showAlert("Alasan pembatalan PO wajib diisi!");
     setIsPoCancelConfirmOpen(false);
@@ -1144,7 +1302,11 @@ export default function Page() {
           <p className="text-[11px] text-rose-300 mt-0.5">Warehouse Management System</p>
           <div className="mt-3 px-3 py-1.5 bg-[#5C2B42] rounded-lg text-xs flex justify-between items-center text-rose-200">
             <span>Login: <b className="text-white">{currentUser.name}</b></span>
-            {isRootAdmin && <span className="px-1.5 py-0.5 rounded bg-amber-500 text-white text-[9px] font-bold uppercase">Root</span>}
+            {isRootAdmin ? (
+              <span className="px-1.5 py-0.5 rounded bg-amber-500 text-white text-[9px] font-bold uppercase">Root</span>
+            ) : (
+              <span className="px-1.5 py-0.5 rounded bg-blue-500 text-white text-[9px] font-bold uppercase">{currentUser.role}</span>
+            )}
           </div>
         </div>
 
@@ -1156,6 +1318,7 @@ export default function Page() {
             { key: "purchase", icon: "📥", label: "Purchase Order & Receiving" },
             { key: "reports", icon: "📑", label: "Laporan (Reports)" },
             { key: "settings", icon: "⚙️", label: "Pengaturan & Toko" },
+            ...(isRootAdmin ? [{ key: "users", icon: "👥", label: "User Management" }] : []),
           ].map((item) => (
             <button
               key={item.key}
@@ -1190,18 +1353,27 @@ export default function Page() {
               {currentTab === "sales" && "Manajemen Sales Order (SO) & Delivery Order (DO)"}
               {currentTab === "inventory" && "Katalog Persediaan & Stock Card Ledger"}
               {currentTab === "purchase" && "Purchasing Order (PO) & Penerimaan Barang"}
-              {currentTab === "reports" && "Pusat Laporan Historis (Read-Only)"}
+              {currentTab === "reports" && "Pusat Laporan Historis"}
               {currentTab === "settings" && "Konfigurasi Toko & RajaOngkir API"}
+              {currentTab === "users" && "Manajemen Pengguna (User Management)"}
             </h2>
             <p className="text-xs text-rose-500">Database Realtime Firestore Sinkron</p>
           </div>
-          <button
-            type="button"
-            onClick={loadAllData}
-            className="px-3.5 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-900 rounded-lg text-xs font-medium"
-          >
-            🔄 Refresh Data
-          </button>
+          <div className="flex items-center gap-2.5">
+            <NotificationBell
+              currentUserId={currentUser.id}
+              currentUserName={currentUser.name}
+              onNavigateToDocument={handleNavigateFromNotification}
+              showAlert={showAlert}
+            />
+            <button
+              type="button"
+              onClick={loadAllData}
+              className="px-3.5 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-900 rounded-lg text-xs font-medium"
+            >
+              🔄 Refresh Data
+            </button>
+          </div>
         </header>
 
         <section className="flex-1 overflow-auto p-6">
@@ -1645,13 +1817,15 @@ export default function Page() {
                       <span className="text-xs font-bold text-rose-950 uppercase">Penyesuaian Stok (Stock Adjustment)</span>
                       <p className="text-[11px] text-slate-500">Koreksi saldo fisik bertambah atau berkurang secara atomik</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsAdjModalOpen(true)}
-                      className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
-                    >
-                      + Buat Penyesuaian Stok
-                    </button>
+                    {!isStaff && (
+                      <button
+                        type="button"
+                        onClick={() => setIsAdjModalOpen(true)}
+                        className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                      >
+                        + Buat Penyesuaian Stok
+                      </button>
+                    )}
                   </div>
 
                   <div className="overflow-x-auto text-xs">
@@ -1707,7 +1881,7 @@ export default function Page() {
                       <span className="text-xs font-bold text-rose-950 uppercase">Audit Fisik Stock Opname</span>
                       <p className="text-[11px] text-slate-500">Pilih mode audit General atau Parsial</p>
                     </div>
-                    {isRootAdmin && (
+                    {!isStaff && isRootAdmin && (
                       <button
                         type="button"
                         onClick={() => setIsInitSopModalOpen(true)}
@@ -1735,7 +1909,7 @@ export default function Page() {
                           <td className="p-2.5 font-bold">{sop.totalSku} SKU</td>
                           <td className="p-2.5 font-bold text-amber-600">{sop.status}</td>
                           <td className="p-2.5 text-right">
-                            {(sop.status === "OPEN" || sop.status === "COUNTING") && (
+                            {(sop.status === "OPEN" || sop.status === "COUNTING") && !isStaff && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1848,13 +2022,15 @@ export default function Page() {
                       <span className="text-xs font-bold text-rose-950 uppercase">Daftar Purchase Order</span>
                       <p className="text-[11px] text-slate-500">Pemesanan barang ke supplier dan penerimaan logistik</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsCreatePoModalOpen(true)}
-                      className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
-                    >
-                      + Buat PO Baru
-                    </button>
+                    {!isStaff && (
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatePoModalOpen(true)}
+                        className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                      >
+                        + Buat PO Baru
+                      </button>
+                    )}
                   </div>
 
                   <div className="overflow-x-auto text-xs">
@@ -1897,7 +2073,7 @@ export default function Page() {
                                 </span>
                               </td>
                               <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
-                                {!isDone && (
+                                {!isDone && !isStaff && (
                                   <>
                                     <button
                                       type="button"
@@ -2013,110 +2189,428 @@ export default function Page() {
               </div>
 
               <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                <span className="text-xs font-bold text-rose-950 uppercase">Data Historis Laporan</span>
+                {/* 5.1 REPORT SO */}
+                {reportSubTab === "so" && (() => {
+                  const filtered = salesOrders.filter((so) => {
+                    if (reportStartDate && so.date < reportStartDate) return false;
+                    if (reportEndDate && so.date > reportEndDate) return false;
+                    return true;
+                  });
 
-                <div className="overflow-x-auto text-xs">
-                  {reportSubTab === "so" && (
-                    <table className="w-full text-left">
-                      <thead className="bg-rose-50 text-rose-900 font-bold">
-                        <tr><th className="p-2">No SO</th><th className="p-2">Tanggal</th><th className="p-2">Customer</th><th className="p-2">Total Nilai</th><th className="p-2">Status</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-rose-50">
-                        {salesOrders.map((so) => (
-                          <tr key={so.id}><td className="p-2 font-mono font-bold">{so.soId}</td><td className="p-2">{so.date}</td><td className="p-2">{so.customerName}</td><td className="p-2 font-bold text-emerald-600">{formatRupiah(Number(so.total || 0))}</td><td className="p-2 font-bold">{so.status}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
+                  const exportFlattenedData = filtered.flatMap((so) =>
+                    (so.items && so.items.length > 0 ? so.items : [{ sku: "-", itemName: "-", qty: 0, price: 0, subtotal: 0 }]).map((it: any) => ({
+                      date: so.date,
+                      soId: so.soId,
+                      customerName: so.customerName,
+                      sku: it.sku || "-",
+                      itemName: it.itemName || "-",
+                      qty: it.qty || 0,
+                      price: it.price || 0,
+                      subtotal: it.subtotal || 0,
+                      total: so.total || 0,
+                      status: so.status,
+                    }))
+                  );
 
-                  {reportSubTab === "do" && (
-                    <table className="w-full text-left">
-                      <thead className="bg-rose-50 text-rose-900 font-bold">
-                        <tr><th className="p-2">No DO</th><th className="p-2">Ref SO</th><th className="p-2">Tanggal</th><th className="p-2">Penerima</th><th className="p-2">Total Pcs</th><th className="p-2">Ekspedisi</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-rose-50">
-                        {deliveryOrders.map((d) => (
-                          <tr key={d.id}><td className="p-2 font-mono font-bold">{d.doId}</td><td className="p-2 font-mono">{d.soId}</td><td className="p-2">{d.date}</td><td className="p-2">{d.recipientName}</td><td className="p-2 font-bold">{d.totalPcs} pcs</td><td className="p-2">{d.expedition}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {reportSubTab === "po" && (
-                    <table className="w-full text-left">
-                      <thead className="bg-rose-50 text-rose-900 font-bold">
-                        <tr><th className="p-2">No PO</th><th className="p-2">Tanggal</th><th className="p-2">Supplier</th><th className="p-2">Total Nilai</th><th className="p-2">Status</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-rose-50">
-                        {purchaseOrders.map((po) => (
-                          <tr key={po.id}><td className="p-2 font-mono font-bold">{po.poId}</td><td className="p-2">{po.poDate}</td><td className="p-2">{po.supplier}</td><td className="p-2 font-bold">{formatRupiah(Number(po.total || 0))}</td><td className="p-2 font-bold text-blue-600">{po.status}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {reportSubTab === "receiving" && (
-                    <table className="w-full text-left">
-                      <thead className="bg-rose-50 text-rose-900 font-bold">
-                        <tr><th className="p-2">No Receiving</th><th className="p-2">Ref PO</th><th className="p-2">Tanggal</th><th className="p-2">Petugas</th><th className="p-2.5">Catatan</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-rose-50">
-                        {receivings.map((r) => (
-                          <tr key={r.id}><td className="p-2 font-mono font-bold">{r.receivingId}</td><td className="p-2 font-mono">{r.poId}</td><td className="p-2">{r.date}</td><td className="p-2">{r.createdBy}</td><td className="p-2">{r.notes || "-"}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {reportSubTab === "opname" && (
-                    <table className="w-full text-left">
-                      <thead className="bg-rose-50 text-rose-900 font-bold">
-                        <tr><th className="p-2">No Dokumen</th><th className="p-2">Tanggal</th><th className="p-2">Total SKU</th><th className="p-2">Status</th><th className="p-2">Petugas Inisiator</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-rose-50">
-                        {stockOpnames.map((sop) => (
-                          <tr key={sop.id}><td className="p-2 font-mono font-bold">{sop.documentNo || sop.sopId}</td><td className="p-2">{sop.opnameDate}</td><td className="p-2 font-bold">{sop.totalSku} SKU</td><td className="p-2 font-bold">{sop.status}</td><td className="p-2">{sop.initializedBy}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {reportSubTab === "stock" && (
-                    <table className="w-full text-left">
-                      <thead className="bg-rose-50 text-rose-900 font-bold">
-                        <tr><th className="p-2">SKU</th><th className="p-2">Nama Produk</th><th className="p-2.5">Stok Fisik</th><th className="p-2">HPP (Beli)</th><th className="p-2">Harga Net</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-rose-50">
-                        {products.map((p) => (
-                          <tr key={p.id}><td className="p-2 font-mono font-bold">{p.sku}</td><td className="p-2 font-semibold">{p.itemName}</td><td className="p-2 font-bold text-emerald-600">{p.stock || 0} pcs</td><td className="p-2">{formatRupiah(Number(p.purchasingPrice || 0))}</td><td className="p-2">{formatRupiah(Number(p.netPrice || 0))}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {reportSubTab === "sales" && (
+                  return (
                     <div className="space-y-3">
-                      <div className="flex gap-2 items-center mb-2">
-                        <span>Filter:</span>
-                        <select value={salesReportType} onChange={(e) => setSalesReportType(e.target.value as any)} className="p-1 border rounded text-xs bg-white">
-                          <option value="summary">Summary Per DO</option>
-                          <option value="day">By Day</option>
-                          <option value="item">By Item Terjual</option>
-                        </select>
+                      <ReportExportControls
+                        reportTitle="Laporan Sales Order"
+                        startDate={reportStartDate}
+                        endDate={reportEndDate}
+                        onStartDateChange={setReportStartDate}
+                        onEndDateChange={setReportEndDate}
+                        data={exportFlattenedData}
+                        columns={[
+                          { header: "Tanggal", dataKey: "date" },
+                          { header: "No SO", dataKey: "soId" },
+                          { header: "Customer", dataKey: "customerName" },
+                          { header: "SKU", dataKey: "sku" },
+                          { header: "Nama Produk", dataKey: "itemName" },
+                          { header: "Qty", dataKey: "qty" },
+                          { header: "Harga", dataKey: "price", format: formatRupiah },
+                          { header: "Subtotal", dataKey: "subtotal", format: formatRupiah },
+                          { header: "Total SO", dataKey: "total", format: formatRupiah },
+                          { header: "Status", dataKey: "status" },
+                        ]}
+                      />
+                      <div className="overflow-x-auto text-xs">
+                        <table className="w-full text-left">
+                          <thead className="bg-rose-50 text-rose-900 font-bold">
+                            <tr><th className="p-2">No SO</th><th className="p-2">Tanggal</th><th className="p-2">Customer</th><th className="p-2">Total Nilai</th><th className="p-2">Status</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-rose-50">
+                            {filtered.map((so) => (
+                              <tr key={so.id}><td className="p-2 font-mono font-bold">{so.soId}</td><td className="p-2">{so.date}</td><td className="p-2">{so.customerName}</td><td className="p-2 font-bold text-emerald-600">{formatRupiah(Number(so.total || 0))}</td><td className="p-2 font-bold">{so.status}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 5.2 REPORT DO */}
+                {reportSubTab === "do" && (() => {
+                  const filtered = deliveryOrders.filter((d) => {
+                    if (reportStartDate && d.date < reportStartDate) return false;
+                    if (reportEndDate && d.date > reportEndDate) return false;
+                    return true;
+                  });
+
+                  const exportFlattenedData = filtered.flatMap((d) =>
+                    (d.items && d.items.length > 0 ? d.items : [{ sku: "-", itemName: "-", qty: d.totalPcs || 0 }]).map((it: any) => ({
+                      date: d.date,
+                      doId: d.doId,
+                      soId: d.soId,
+                      recipientName: d.recipientName,
+                      sku: it.sku || "-",
+                      itemName: it.itemName || "-",
+                      qty: it.qty || 0,
+                      expedition: d.expedition,
+                    }))
+                  );
+
+                  return (
+                    <div className="space-y-3">
+                      <ReportExportControls
+                        reportTitle="Laporan Delivery Order"
+                        startDate={reportStartDate}
+                        endDate={reportEndDate}
+                        onStartDateChange={setReportStartDate}
+                        onEndDateChange={setReportEndDate}
+                        data={exportFlattenedData}
+                        columns={[
+                          { header: "Tanggal", dataKey: "date" },
+                          { header: "No DO", dataKey: "doId" },
+                          { header: "Ref SO", dataKey: "soId" },
+                          { header: "Penerima", dataKey: "recipientName" },
+                          { header: "SKU", dataKey: "sku" },
+                          { header: "Nama Produk", dataKey: "itemName" },
+                          { header: "Qty Pcs", dataKey: "qty" },
+                          { header: "Ekspedisi", dataKey: "expedition" },
+                        ]}
+                      />
+                      <div className="overflow-x-auto text-xs">
+                        <table className="w-full text-left">
+                          <thead className="bg-rose-50 text-rose-900 font-bold">
+                            <tr><th className="p-2">No DO</th><th className="p-2">Ref SO</th><th className="p-2">Tanggal</th><th className="p-2">Penerima</th><th className="p-2">Total Pcs</th><th className="p-2">Ekspedisi</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-rose-50">
+                            {filtered.map((d) => (
+                              <tr key={d.id}><td className="p-2 font-mono font-bold">{d.doId}</td><td className="p-2 font-mono">{d.soId}</td><td className="p-2">{d.date}</td><td className="p-2">{d.recipientName}</td><td className="p-2 font-bold">{d.totalPcs} pcs</td><td className="p-2">{d.expedition}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 5.3 REPORT PO */}
+                {reportSubTab === "po" && (() => {
+                  const filtered = purchaseOrders.filter((po) => {
+                    if (reportStartDate && po.poDate < reportStartDate) return false;
+                    if (reportEndDate && po.poDate > reportEndDate) return false;
+                    return true;
+                  });
+
+                  const exportFlattenedData = filtered.flatMap((po) =>
+                    (po.items && po.items.length > 0 ? po.items : [{ sku: "-", itemName: "-", qty: 0, purchasingPrice: 0, subtotal: 0 }]).map((it: any) => ({
+                      date: po.poDate,
+                      poId: po.poId || po.documentNo,
+                      supplier: po.supplier,
+                      sku: it.sku || "-",
+                      itemName: it.itemName || "-",
+                      qty: it.qty || 0,
+                      purchasingPrice: it.purchasingPrice || 0,
+                      subtotal: it.subtotal || 0,
+                      status: po.status,
+                    }))
+                  );
+
+                  return (
+                    <div className="space-y-3">
+                      <ReportExportControls
+                        reportTitle="Laporan Purchase Order"
+                        startDate={reportStartDate}
+                        endDate={reportEndDate}
+                        onStartDateChange={setReportStartDate}
+                        onEndDateChange={setReportEndDate}
+                        data={exportFlattenedData}
+                        columns={[
+                          { header: "Tanggal", dataKey: "date" },
+                          { header: "No PO", dataKey: "poId" },
+                          { header: "Supplier", dataKey: "supplier" },
+                          { header: "SKU", dataKey: "sku" },
+                          { header: "Nama Produk", dataKey: "itemName" },
+                          { header: "Qty Pesan", dataKey: "qty" },
+                          { header: "HPP (Beli)", dataKey: "purchasingPrice", format: formatRupiah },
+                          { header: "Subtotal", dataKey: "subtotal", format: formatRupiah },
+                          { header: "Status", dataKey: "status" },
+                        ]}
+                      />
+                      <div className="overflow-x-auto text-xs">
+                        <table className="w-full text-left">
+                          <thead className="bg-rose-50 text-rose-900 font-bold">
+                            <tr><th className="p-2">No PO</th><th className="p-2">Tanggal</th><th className="p-2">Supplier</th><th className="p-2">Total Nilai</th><th className="p-2">Status</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-rose-50">
+                            {filtered.map((po) => (
+                              <tr key={po.id}><td className="p-2 font-mono font-bold">{po.poId}</td><td className="p-2">{po.poDate}</td><td className="p-2">{po.supplier}</td><td className="p-2 font-bold text-blue-600">{formatRupiah(Number(po.total || 0))}</td><td className="p-2 font-bold">{po.status}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 5.4 REPORT RECEIVING */}
+                {reportSubTab === "receiving" && (() => {
+                  const filtered = receivings.filter((r) => {
+                    if (reportStartDate && r.date < reportStartDate) return false;
+                    if (reportEndDate && r.date > reportEndDate) return false;
+                    return true;
+                  });
+
+                  const exportFlattenedData = filtered.flatMap((r) =>
+                    (r.items && r.items.length > 0 ? r.items : [{ sku: "-", itemName: "-", qtyReceived: 0 }]).map((it: any) => ({
+                      date: r.date,
+                      receivingId: r.receivingId,
+                      poId: r.poId,
+                      supplier: r.supplier || "-",
+                      sku: it.sku || "-",
+                      itemName: it.itemName || "-",
+                      qtyReceived: it.qtyReceived || 0,
+                      createdBy: r.createdBy,
+                      notes: r.notes || "-",
+                    }))
+                  );
+
+                  return (
+                    <div className="space-y-3">
+                      <ReportExportControls
+                        reportTitle="Laporan Penerimaan Barang (Receiving)"
+                        startDate={reportStartDate}
+                        endDate={reportEndDate}
+                        onStartDateChange={setReportStartDate}
+                        onEndDateChange={setReportEndDate}
+                        data={exportFlattenedData}
+                        columns={[
+                          { header: "Tanggal", dataKey: "date" },
+                          { header: "No Receiving", dataKey: "receivingId" },
+                          { header: "Ref PO", dataKey: "poId" },
+                          { header: "Supplier", dataKey: "supplier" },
+                          { header: "SKU", dataKey: "sku" },
+                          { header: "Nama Produk", dataKey: "itemName" },
+                          { header: "Qty Diterima", dataKey: "qtyReceived" },
+                          { header: "Petugas", dataKey: "createdBy" },
+                          { header: "Catatan", dataKey: "notes" },
+                        ]}
+                      />
+                      <div className="overflow-x-auto text-xs">
+                        <table className="w-full text-left">
+                          <thead className="bg-rose-50 text-rose-900 font-bold">
+                            <tr><th className="p-2">No Receiving</th><th className="p-2">Ref PO</th><th className="p-2">Tanggal</th><th className="p-2">Petugas</th><th className="p-2">Catatan</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-rose-50">
+                            {filtered.map((r) => (
+                              <tr key={r.id}><td className="p-2 font-mono font-bold">{r.receivingId}</td><td className="p-2 font-mono">{r.poId}</td><td className="p-2">{r.date}</td><td className="p-2">{r.createdBy}</td><td className="p-2">{r.notes || "-"}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 5.5 REPORT STOCK OPNAME */}
+                {reportSubTab === "opname" && (() => {
+                  const filtered = stockOpnames.filter((sop) => {
+                    if (reportStartDate && sop.opnameDate < reportStartDate) return false;
+                    if (reportEndDate && sop.opnameDate > reportEndDate) return false;
+                    return true;
+                  });
+
+                  const exportFlattenedData = filtered.flatMap((sop) =>
+                    (sop.items && sop.items.length > 0 ? sop.items : [{ skuCode: "-", itemName: "-", systemQtySnapshot: 0, physicalQty: 0, adjustmentQty: 0 }]).map((it: any) => ({
+                      date: sop.opnameDate,
+                      documentNo: sop.documentNo || sop.sopId,
+                      sku: it.skuCode || it.skuId || "-",
+                      itemName: it.itemName || "-",
+                      systemQty: it.systemQtySnapshot ?? 0,
+                      physicalQty: it.physicalQty ?? "-",
+                      selisih: it.adjustmentQty ?? 0,
+                      status: sop.status,
+                      initializedBy: sop.initializedBy,
+                    }))
+                  );
+
+                  return (
+                    <div className="space-y-3">
+                      <ReportExportControls
+                        reportTitle="Laporan Stock Opname"
+                        startDate={reportStartDate}
+                        endDate={reportEndDate}
+                        onStartDateChange={setReportStartDate}
+                        onEndDateChange={setReportEndDate}
+                        data={exportFlattenedData}
+                        columns={[
+                          { header: "Tanggal", dataKey: "date" },
+                          { header: "No Dokumen", dataKey: "documentNo" },
+                          { header: "SKU", dataKey: "sku" },
+                          { header: "Nama Produk", dataKey: "itemName" },
+                          { header: "Qty Sistem", dataKey: "systemQty" },
+                          { header: "Qty Fisik", dataKey: "physicalQty" },
+                          { header: "Selisih", dataKey: "selisih" },
+                          { header: "Status", dataKey: "status" },
+                          { header: "Inisiator", dataKey: "initializedBy" },
+                        ]}
+                      />
+                      <div className="overflow-x-auto text-xs">
+                        <table className="w-full text-left">
+                          <thead className="bg-rose-50 text-rose-900 font-bold">
+                            <tr><th className="p-2">No Dokumen</th><th className="p-2">Tanggal</th><th className="p-2">Total SKU</th><th className="p-2">Status</th><th className="p-2">Petugas Inisiator</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-rose-50">
+                            {filtered.map((sop) => (
+                              <tr key={sop.id}><td className="p-2 font-mono font-bold">{sop.documentNo || sop.sopId}</td><td className="p-2">{sop.opnameDate}</td><td className="p-2 font-bold">{sop.totalSku} SKU</td><td className="p-2 font-bold">{sop.status}</td><td className="p-2">{sop.initializedBy}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 5.6 REPORT STOCK */}
+                {reportSubTab === "stock" && (
+                  <div className="space-y-3">
+                    <ReportExportControls
+                      reportTitle="Laporan Saldo Persediaan Produk"
+                      startDate=""
+                      endDate=""
+                      onStartDateChange={() => {}}
+                      onEndDateChange={() => {}}
+                      data={products.map((p) => ({
+                        date: new Date().toISOString().split("T")[0],
+                        sku: p.sku,
+                        itemName: p.itemName,
+                        familyCode: p.familyCode || "-",
+                        stock: p.stock || 0,
+                        purchasingPrice: p.purchasingPrice || 0,
+                        netPrice: p.netPrice || 0,
+                      }))}
+                      columns={[
+                        { header: "Tanggal Snapshot", dataKey: "date" },
+                        { header: "SKU", dataKey: "sku" },
+                        { header: "Nama Produk", dataKey: "itemName" },
+                        { header: "Family", dataKey: "familyCode" },
+                        { header: "Stok Fisik", dataKey: "stock" },
+                        { header: "HPP (Beli)", dataKey: "purchasingPrice", format: formatRupiah },
+                        { header: "Harga Jual", dataKey: "netPrice", format: formatRupiah },
+                      ]}
+                    />
+                    <div className="overflow-x-auto text-xs">
                       <table className="w-full text-left">
                         <thead className="bg-rose-50 text-rose-900 font-bold">
-                          <tr><th className="p-2">No DO / Tanggal</th><th className="p-2">Penerima / SKU</th><th className="p-2">Total Pcs</th><th className="p-2">Total Nilai</th></tr>
+                          <tr><th className="p-2">SKU</th><th className="p-2">Nama Produk</th><th className="p-2.5">Stok Fisik</th><th className="p-2">HPP (Beli)</th><th className="p-2">Harga Net</th></tr>
                         </thead>
                         <tbody className="divide-y divide-rose-50">
-                          {deliveryOrders.map((d) => (
-                            <tr key={d.id}><td className="p-2 font-mono font-bold">{d.doId} ({d.date})</td><td className="p-2">{d.recipientName}</td><td className="p-2 font-bold">{d.totalPcs} pcs</td><td className="p-2 font-bold text-emerald-600">{formatRupiah((d.items || []).reduce((acc: number, it: any) => acc + (it.subtotal || 0), 0))}</td></tr>
+                          {products.map((p) => (
+                            <tr key={p.id}><td className="p-2 font-mono font-bold">{p.sku}</td><td className="p-2 font-semibold">{p.itemName}</td><td className="p-2 font-bold text-emerald-600">{p.stock || 0} pcs</td><td className="p-2">{formatRupiah(Number(p.purchasingPrice || 0))}</td><td className="p-2">{formatRupiah(Number(p.netPrice || 0))}</td></tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
+
+                {/* 5.7 REPORT SALES */}
+                {reportSubTab === "sales" && (() => {
+                  const filtered = deliveryOrders.filter((d) => {
+                    if (reportStartDate && d.date < reportStartDate) return false;
+                    if (reportEndDate && d.date > reportEndDate) return false;
+                    return true;
+                  });
+
+                  const exportItemData = filtered.flatMap((d) =>
+                    (d.items || []).map((it: any) => ({
+                      date: d.date,
+                      doId: d.doId,
+                      recipientName: d.recipientName,
+                      sku: it.sku || "-",
+                      itemName: it.itemName || "-",
+                      qty: it.qty || 1,
+                      price: it.price || 0,
+                      subtotal: (it.qty || 1) * (it.price || 0),
+                      expedition: d.expedition || "-",
+                    }))
+                  );
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex gap-2 items-center mb-1 text-xs">
+                        <span className="font-semibold text-rose-950">Tipe Tampilan:</span>
+                        <select value={salesReportType} onChange={(e) => setSalesReportType(e.target.value as any)} className="p-1 border rounded bg-white outline-none">
+                          <option value="summary">Summary Per DO</option>
+                          <option value="day">By Day</option>
+                          <option value="item">By Item Terjual (Detail Analisis)</option>
+                        </select>
+                      </div>
+
+                      <ReportExportControls
+                        reportTitle={`Laporan Penjualan (${salesReportType.toUpperCase()})`}
+                        startDate={reportStartDate}
+                        endDate={reportEndDate}
+                        onStartDateChange={setReportStartDate}
+                        onEndDateChange={setReportEndDate}
+                        data={salesReportType === "item" ? exportItemData : filtered.map((d) => ({
+                          date: d.date,
+                          doId: d.doId,
+                          recipientName: d.recipientName,
+                          totalPcs: d.totalPcs || 0,
+                          totalNilai: (d.items || []).reduce((acc: number, it: any) => acc + (it.subtotal || 0), 0),
+                        }))}
+                        columns={
+                          salesReportType === "item"
+                            ? [
+                                { header: "Tanggal", dataKey: "date" },
+                                { header: "No DO", dataKey: "doId" },
+                                { header: "SKU", dataKey: "sku" },
+                                { header: "Nama Produk", dataKey: "itemName" },
+                                { header: "Qty Terjual", dataKey: "qty" },
+                                { header: "Harga Satuan", dataKey: "price", format: formatRupiah },
+                                { header: "Subtotal", dataKey: "subtotal", format: formatRupiah },
+                                { header: "Penerima", dataKey: "recipientName" },
+                                { header: "Ekspedisi", dataKey: "expedition" },
+                              ]
+                            : [
+                                { header: "Tanggal", dataKey: "date" },
+                                { header: "No DO", dataKey: "doId" },
+                                { header: "Penerima", dataKey: "recipientName" },
+                                { header: "Total Pcs", dataKey: "totalPcs" },
+                                { header: "Total Nilai", dataKey: "totalNilai", format: formatRupiah },
+                              ]
+                        }
+                      />
+
+                      <div className="overflow-x-auto text-xs">
+                        <table className="w-full text-left">
+                          <thead className="bg-rose-50 text-rose-900 font-bold">
+                            <tr><th className="p-2">No DO / Tanggal</th><th className="p-2">Penerima / SKU</th><th className="p-2">Total Pcs</th><th className="p-2">Total Nilai</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-rose-50">
+                            {filtered.map((d) => (
+                              <tr key={d.id}><td className="p-2 font-mono font-bold">{d.doId} ({d.date})</td><td className="p-2">{d.recipientName}</td><td className="p-2 font-bold">{d.totalPcs} pcs</td><td className="p-2 font-bold text-emerald-600">{formatRupiah((d.items || []).reduce((acc: number, it: any) => acc + (it.subtotal || 0), 0))}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -2335,6 +2829,70 @@ export default function Page() {
               </div>
             </div>
           )}
+
+          {/* TAB 7: USER MANAGEMENT */}
+          {currentTab === "users" && isRootAdmin && (
+            <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
+              <div className="flex justify-between items-center">
+                <div>
+                  <span className="text-xs font-bold text-rose-950 uppercase">Manajemen Pengguna (User Management)</span>
+                  <p className="text-[11px] text-slate-500">Hanya Root Admin yang berhak mendaftarkan user baru dengan role Staff</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUserForm({ fullName: "", userId: "", password: "" });
+                    setIsAddUserModalOpen(true);
+                  }}
+                  className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                >
+                  + Tambah User Baru
+                </button>
+              </div>
+
+              <div className="overflow-x-auto text-xs">
+                <table className="w-full text-left">
+                  <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                    <tr>
+                      <th className="p-2.5">User ID / Username</th>
+                      <th className="p-2.5">Nama Lengkap</th>
+                      <th className="p-2.5">Role</th>
+                      <th className="p-2.5">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-rose-50">
+                    {usersList.map((u) => (
+                      <tr key={u.id} className="hover:bg-rose-50/30 transition">
+                        <td className="p-2.5 font-mono font-bold text-rose-900">{u.userId || u.username || u.id}</td>
+                        <td className="p-2.5 font-semibold text-rose-950">{u.fullName || u.name || "-"}</td>
+                        <td className="p-2.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            String(u.role).toLowerCase().includes("root")
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-blue-100 text-blue-800"
+                          }`}>
+                            {u.role || "Staff Gudang"}
+                          </span>
+                        </td>
+                        <td className="p-2.5">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            Aktif
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {usersList.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="p-5 text-center text-slate-400">
+                          Belum ada daftar pengguna di database.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </section>
       </main>
 
@@ -2426,6 +2984,80 @@ export default function Page() {
         onExecuteReceiving={handleExecuteReceiving}
         showAlert={showAlert}
       />
+
+      {/* MODAL PENDAFTARAN USER BARU */}
+      {isAddUserModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-rose-100">
+            <h3 className="text-base font-bold text-rose-950 mb-1">Daftarkan User Baru</h3>
+            <p className="text-xs text-rose-500 mb-4 font-medium">Role baru otomatis ditetapkan sebagai Staff Gudang</p>
+
+            <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-semibold text-rose-900 mb-1">Nama Lengkap</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="misal: Budi Santoso"
+                  value={userForm.fullName}
+                  onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })}
+                  className="w-full p-2 border border-rose-200 rounded-lg outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-rose-900 mb-1">User ID / Username</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="misal: budi_staff"
+                  value={userForm.userId}
+                  onChange={(e) => setUserForm({ ...userForm, userId: e.target.value })}
+                  className="w-full p-2 border border-rose-200 rounded-lg outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-rose-900 mb-1">Password</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Masukkan password..."
+                  value={userForm.password}
+                  onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                  className="w-full p-2 border border-rose-200 rounded-lg outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-rose-900 mb-1">Role Akun</label>
+                <input
+                  type="text"
+                  disabled
+                  value="Staff Gudang (Staff)"
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-slate-100 text-slate-500 font-bold select-none cursor-not-allowed outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-rose-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAddUserModalOpen(false)}
+                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white rounded-lg font-bold shadow"
+                >
+                  Simpan User
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* MODAL GANTI EKSPEDISI DARI SNAPSHOT (SO PROCESSING) */}
       {isEditExpeditionModalOpen && targetProcessingSo && (
