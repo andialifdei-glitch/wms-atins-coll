@@ -1,13 +1,12 @@
 ﻿"use client";
 
-import { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { db } from "../lib/firebase";
 import {
   collection,
   getDocs,
   limit,
   query,
-  where,
   doc,
   updateDoc,
   setDoc,
@@ -15,9 +14,13 @@ import {
   runTransaction,
 } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import * as XLSX from "xlsx";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { formatRupiah, buildWhatsAppMessage } from "@/lib/formatters";
+import ProductModal from "@/components/modals/ProductModal";
+import StockAdjustmentModal from "@/components/modals/StockAdjustmentModal";
+import StockOpnameModal from "@/components/modals/StockOpnameModal";
+import SalesOrderModal from "@/components/modals/SalesOrderModal";
+import CreatePurchaseOrderModal from "@/components/modals/CreatePurchaseOrderModal";
+import ReceivingModal from "@/components/modals/ReceivingModal";
 
 type MainTab = "dashboard" | "sales" | "inventory" | "purchase" | "reports" | "settings";
 
@@ -26,7 +29,7 @@ interface RegionItem {
   name: string;
 }
 
-export default function AdminPortalMirror() {
+export default function Page() {
   const [currentTab, setCurrentTab] = useState<MainTab>("dashboard");
   const [salesSubTab, setSalesSubTab] = useState<"so" | "do">("so");
   const [invSubTab, setInvSubTab] = useState<string>("products");
@@ -67,14 +70,14 @@ export default function AdminPortalMirror() {
     defaultOriginId: 4997,
   });
 
-  // Database Wilayah
+  // Wilayah
   const [provinces, setProvinces] = useState<RegionItem[]>([]);
   const [regencies, setRegencies] = useState<RegionItem[]>([]);
   const [districts, setDistricts] = useState<RegionItem[]>([]);
   const [villages, setVillages] = useState<RegionItem[]>([]);
   const [loadingRegion, setLoadingRegion] = useState(false);
 
-  // API Key State
+  // API Key
   const [inputApiKey, setInputApiKey] = useState("");
   const [apiKeyTestedSuccess, setApiKeyTestedSuccess] = useState(false);
   const [testedToken, setTestedToken] = useState<string | null>(null);
@@ -96,54 +99,57 @@ export default function AdminPortalMirror() {
     message: "",
   });
 
-  // SO State & Enhancements
-  const [soStatusFilter, setSoStatusFilter] = useState<string>("ALL");
+  // Modal State
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [isEditingProduct, setIsEditingProduct] = useState(false);
+  const [productFormData, setProductFormData] = useState<any>({
+    sku: "",
+    itemName: "",
+    familyCode: "",
+    weightInGrams: 0,
+    active: true,
+    purchasingPrice: 0,
+    netPrice: 0,
+    initialStock: 0,
+  });
+
+  const [isAdjModalOpen, setIsAdjModalOpen] = useState(false);
+  const [isInitSopModalOpen, setIsInitSopModalOpen] = useState(false);
   const [isSoModalOpen, setIsSoModalOpen] = useState(false);
   const [editingSoId, setEditingSoId] = useState<string | null>(null);
-  const [customerSearchQuery, setCustomerSearchQuery] = useState("");
-  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
-  const [productSearchQuery, setProductSearchQuery] = useState("");
-  const [soItems, setSoItems] = useState<{ sku: string; itemName: string; qty: number; price: number; subtotal: number; weightInGrams: number }[]>([]);
-  const [shippingRatesSnapshot, setShippingRatesSnapshot] = useState<{ courier: string; serviceCode: string; serviceName: string; cost: number; etd: string }[]>([]);
-  const [selectedShippingCost, setSelectedShippingCost] = useState<number>(0);
-  const [selectedCourierCode, setSelectedCourierCode] = useState<string>("");
-  const [selectedServiceName, setSelectedServiceName] = useState<string>("");
-  const [isCalculatingOngkir, setIsCalculatingOngkir] = useState(false);
+  const [soModalInitCustomer, setSoModalInitCustomer] = useState<any | null>(null);
+  const [soModalInitItems, setSoModalInitItems] = useState<any[]>([]);
+  const [soModalInitRates, setSoModalInitRates] = useState<any[]>([]);
+  const [soModalInitCost, setSoModalInitCost] = useState<number>(0);
+  const [soModalInitCourier, setSoModalInitCourier] = useState<string>("");
+  const [soModalInitService, setSoModalInitService] = useState<string>("");
 
-  // Modal Konfirmasi Processing
+  const [soStatusFilter, setSoStatusFilter] = useState<string>("ALL");
   const [processingConfirmTarget, setProcessingConfirmTarget] = useState<any | null>(null);
-
-  // Edit Ekspedisi State
   const [isEditExpeditionModalOpen, setIsEditExpeditionModalOpen] = useState(false);
   const [targetProcessingSo, setTargetProcessingSo] = useState<any | null>(null);
 
-  // Kartu Stok / Ledger
+  // PO & Receiving Modal State
+  const [isCreatePoModalOpen, setIsCreatePoModalOpen] = useState(false);
+  const [isReceivingModalOpen, setIsReceivingModalOpen] = useState(false);
+  const [selectedPoForReceiving, setSelectedPoForReceiving] = useState<any | null>(null);
+
+  // Logout Confirm State
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+
+  // Kartu Stok & Pembatalan
   const [ledgerSearch, setLedgerSearch] = useState("");
   const [selectedProductLedger, setSelectedProductLedger] = useState<any | null>(null);
-
-  // Batal SOP
   const [sopCancelTarget, setSopCancelTarget] = useState<any | null>(null);
   const [sopCancelReason, setSopCancelReason] = useState("");
   const [sopCountdown, setSopCountdown] = useState(10);
   const [isSopCancelConfirmOpen, setIsSopCancelConfirmOpen] = useState(false);
-
-  // Batal PO
   const [poCancelTarget, setPoCancelTarget] = useState<any | null>(null);
   const [poCancelReason, setPoCancelReason] = useState("");
   const [isPoCancelConfirmOpen, setIsPoCancelConfirmOpen] = useState(false);
 
-  // Receiving
-  const [isReceivingModalOpen, setIsReceivingModalOpen] = useState(false);
-  const [selectedPoForReceiving, setSelectedPoForReceiving] = useState<any>(null);
-  const [receivedQtyInputs, setReceivedQtyInputs] = useState<Record<string, number>>({});
-  const [receivingNotes, setReceivingNotes] = useState("");
-  const [isReceivingConfirmOpen, setIsReceivingConfirmOpen] = useState(false);
-  const [receivingCountdown, setReceivingCountdown] = useState(10);
-
   // Report Filter
   const [salesReportType, setSalesReportType] = useState<"day" | "item" | "summary">("summary");
-  const [reportStartDate, setReportStartDate] = useState<string>("");
-  const [reportEndDate, setReportEndDate] = useState<string>("");
 
   const router = useRouter();
 
@@ -157,6 +163,12 @@ export default function AdminPortalMirror() {
     setAlertModal({ isOpen: true, title, message });
   };
 
+  function handleExecuteLogout() {
+    setIsLogoutConfirmOpen(false);
+    document.cookie = "admin_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+    router.push("/login");
+  }
+
   useEffect(() => {
     if (!isSopCancelConfirmOpen) {
       setSopCountdown(10);
@@ -167,17 +179,6 @@ export default function AdminPortalMirror() {
       return () => clearTimeout(timer);
     }
   }, [isSopCancelConfirmOpen, sopCountdown]);
-
-  useEffect(() => {
-    if (!isReceivingConfirmOpen) {
-      setReceivingCountdown(10);
-      return;
-    }
-    if (receivingCountdown > 0) {
-      const timer = setTimeout(() => setReceivingCountdown((c) => c - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [isReceivingConfirmOpen, receivingCountdown]);
 
   useEffect(() => {
     try {
@@ -362,7 +363,7 @@ export default function AdminPortalMirror() {
         { merge: true }
       );
       setStoreSettings((prev) => ({ ...prev, storeAddress: fullAddr }));
-      showAlert("Alamat resmi toko berhasil disimpan berdasarkan basis data kewilayahan!", "Sukses");
+      showAlert("Alamat resmi toko berhasil disimpan!", "Sukses");
       loadAllData();
     } catch (err: any) {
       showAlert(err.message || "Gagal menyimpan alamat toko");
@@ -404,7 +405,7 @@ export default function AdminPortalMirror() {
 
   async function handleConfirmAndSaveApiKey() {
     if (!apiKeyTestedSuccess || !testedToken) {
-      return showAlert("API Key harus diuji dan dikonfirmasi dapat bekerja terlebih dahulu!", "Peringatan");
+      return showAlert("API Key harus diuji terlebih dahulu!", "Peringatan");
     }
 
     setIsSavingApiKey(true);
@@ -422,7 +423,7 @@ export default function AdminPortalMirror() {
       const data = await res.json();
 
       if (res.ok && data.success) {
-        showAlert("Perubahan API Key RajaOngkir berhasil disetujui dan disimpan!", "Sukses");
+        showAlert("Perubahan API Key RajaOngkir berhasil disimpan!", "Sukses");
         setStoreSettings((prev) => ({ ...prev, rajaOngkirApiKey: inputApiKey.trim() }));
         setApiKeyTestedSuccess(false);
         setTestedToken(null);
@@ -437,136 +438,254 @@ export default function AdminPortalMirror() {
     }
   }
 
-  const formatRupiah = (val: number) => {
-    return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(val);
-  };
-
-  // Helper WhatsApp Share SO Sesuai Format
-  function handleShareWhatsApp(so: any) {
-    const items = so.items || [];
-    const totalPcs = items.reduce((acc: number, it: any) => acc + Number(it.qty || 1), 0);
-    const subtotalProduk = items.reduce((acc: number, it: any) => acc + Number(it.subtotal || 0), 0);
-    const totalBerat = so.totalWeightInGrams || items.reduce((acc: number, it: any) => acc + (Number(it.weightInGrams || 0) * Number(it.qty || 1)), 0);
-
-    let itemsText = "";
-    items.forEach((it: any, idx: number) => {
-      itemsText += `${idx + 1}. ${it.itemName}\n   Qty: ${it.qty} pcs\n   Harga: ${formatRupiah(Number(it.price || 0))}\n   Subtotal: ${formatRupiah(Number(it.subtotal || 0))}\n`;
-    });
-
-    const msg = 
-`SALES ORDER
-${so.soId}
-
-Customer: ${so.customerName || "-"}
-Alamat: ${so.address || "-"}
-${itemsText}-------------------------
-Total Item: ${totalPcs} pcs
-Total Berat: ${totalBerat} gram
-Subtotal Produk: ${formatRupiah(subtotalProduk)}
-Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
-
-    const cleanPhone = String(so.phone || "").replace(/[^0-9]/g, "");
-    let targetUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
-    if (cleanPhone) {
-      const formattedPhone = cleanPhone.startsWith("0") ? "62" + cleanPhone.slice(1) : cleanPhone;
-      targetUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(msg)}`;
-    }
-    window.open(targetUrl, "_blank");
-  }
-
-  // Filter Customer Autocomplete
-  const filteredCustomers = useMemo(() => {
-    if (!customerSearchQuery.trim()) return [];
-    const q = customerSearchQuery.toLowerCase();
-    return customers.filter(
-      (c) =>
-        (c.customerName || "").toLowerCase().includes(q) ||
-        (c.phone || "").toLowerCase().includes(q) ||
-        (c.customerCode || "").toLowerCase().includes(q)
-    ).slice(0, 5);
-  }, [customers, customerSearchQuery]);
-
-  // Filter Produk Autocomplete (Searchbox)
-  const filteredSearchProducts = useMemo(() => {
-    if (!productSearchQuery.trim()) return [];
-    const q = productSearchQuery.toLowerCase();
-    return products.filter(
-      (p) =>
-        (p.sku || "").toLowerCase().includes(q) ||
-        (p.itemName || "").toLowerCase().includes(q)
-    ).slice(0, 6);
-  }, [products, productSearchQuery]);
-
-  // Cek Ongkir & Snapshot
-  async function handleCheckOngkir() {
-    const destAddr = selectedCustomer?.displayAddress || selectedCustomer?.fullAddress || "";
-    if (!destAddr) {
-      return showAlert("Pilih customer yang memiliki alamat lengkap terlebih dahulu!", "Peringatan");
-    }
-    const totalWeight = Math.max(1000, soItems.reduce((acc, it) => acc + (it.weightInGrams || 0) * it.qty, 0));
-
-    setIsCalculatingOngkir(true);
-    setShippingRatesSnapshot([]);
+  async function handleSaveProduct(savedData: any) {
     try {
-      const searchRes = await fetch("/api/shipping/calculate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "SEARCH_DESTINATION", queryText: destAddr }),
-      });
-      const searchJson = await searchRes.json();
-      const destId = searchJson?.data?.[0]?.id || selectedCustomer?.rajaOngkirDestinationId || 4997;
-
-      const couriers = ["wahana", "lion", "spx"];
-      const compiledRates: any[] = [];
-
-      for (const c of couriers) {
-        try {
-          const costRes = await fetch("/api/shipping/calculate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "CALCULATE_COST",
-              originId: storeSettings.defaultOriginId || 4997,
-              destinationId: destId,
-              weightInGrams: totalWeight,
-              courierCode: c,
-            }),
-          });
-          const costJson = await costRes.json();
-          if (costJson.status === "AVAILABLE" && Array.isArray(costJson.data)) {
-            compiledRates.push(...costJson.data);
-          }
-        } catch (err) {}
-      }
-
-      if (compiledRates.length === 0) {
-        showAlert("Tidak ditemukan tarif pengiriman dari RajaOngkir untuk rute ini.", "Info Ongkir");
+      setLoading(true);
+      if (isEditingProduct) {
+        if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak mengedit produk.");
+        await updateDoc(doc(db, "products", savedData.sku), {
+          itemName: savedData.itemName.trim(),
+          purchasingPrice: Number(savedData.purchasingPrice),
+          netPrice: Number(savedData.netPrice),
+          active: Boolean(savedData.active),
+          status: savedData.active ? "ACTIVE" : "INACTIVE",
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.name,
+        });
+        showAlert(`Parameter produk ${savedData.sku} berhasil diperbarui.`);
       } else {
-        setShippingRatesSnapshot(compiledRates);
-        showAlert(`Berhasil memuat ${compiledRates.length} tarif pengiriman resmi!`);
+        const famCode = savedData.familyCode.trim() || families[0]?.familyCode || "FAM-001";
+        const famNum = parseInt(famCode.replace(/[^0-9]/g, ""), 10) || 1;
+        const initStock = Number(savedData.initialStock) || 0;
+
+        await runTransaction(db, async (tx) => {
+          const fCountRef = doc(db, "family_counters", famCode);
+          const fSnap = await tx.get(fCountRef);
+          const curSeq = fSnap.exists() ? (fSnap.data().currentProductNumber || 0) : 0;
+          const nextSeq = curSeq + 1;
+          const candidateSku = `SKU-${String(famNum).padStart(3, "0")}${String(nextSeq).padStart(3, "0")}`;
+
+          tx.set(fCountRef, { familyCode: famCode, currentProductNumber: nextSeq, updatedAt: serverTimestamp() });
+          tx.set(doc(db, "products", candidateSku), {
+            productId: candidateSku,
+            sku: candidateSku,
+            familyCode: famCode,
+            itemName: savedData.itemName.trim(),
+            lastReceiving: "-",
+            stock: initStock,
+            purchasingPrice: Number(savedData.purchasingPrice),
+            netPrice: Number(savedData.netPrice),
+            weightInGrams: Number(savedData.weightInGrams) || 0,
+            active: Boolean(savedData.active),
+            status: savedData.active ? "ACTIVE" : "INACTIVE",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            createdBy: currentUser.name,
+          });
+
+          if (initStock > 0) {
+            const mvRef = doc(collection(db, "stock_movements"));
+            tx.set(mvRef, {
+              movementId: mvRef.id,
+              date: new Date().toISOString().split("T")[0],
+              itemCode: candidateSku,
+              itemNameSnapshot: savedData.itemName.trim(),
+              type: "ADJUSTMENT",
+              referenceId: "INITIAL_STOCK",
+              qtyIn: initStock,
+              qtyOut: 0,
+              previousStock: 0,
+              newStock: initStock,
+              reason: "Inisialisasi Stok Awal Produk",
+              user: currentUser.name,
+              timestamp: serverTimestamp(),
+            });
+          }
+        });
+        showAlert("Produk baru berhasil disimpan!");
       }
+      setIsProductModalOpen(false);
+      loadAllData();
     } catch (err: any) {
-      showAlert("Gagal menghitung ongkos kirim: " + (err.message || "Periksa koneksi"));
+      showAlert(err.message || "Gagal menyimpan data produk.");
     } finally {
-      setIsCalculatingOngkir(false);
+      setLoading(false);
     }
   }
 
-  // Simpan / Update Sales Order
-  async function handleSaveSalesOrder(e: React.FormEvent) {
-    e.preventDefault();
-    if (!selectedCustomer) return showAlert("Pilih customer dari database terlebih dahulu!");
-    if (soItems.length === 0) return showAlert("Tambahkan minimal 1 item barang ke dalam Sales Order!");
+  async function handleExecuteStockAdjustment(formData: any) {
+    try {
+      setLoading(true);
+      const prod = products.find((p) => p.sku === formData.sku);
+      if (!prod) throw new Error("Produk tidak ditemukan!");
 
+      const today = new Date();
+      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
+      const displayDate = today.toISOString().split("T")[0];
+      const adjId = `Adj-${dateStr}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+
+      await runTransaction(db, async (tx) => {
+        const pRef = doc(db, "products", formData.sku);
+        const pSnap = await tx.get(pRef);
+        if (!pSnap.exists()) throw new Error("Produk tidak ditemukan!");
+
+        const currentStock = Number(pSnap.data()?.stock || 0);
+        const newStock = formData.type === "INCREASE"
+          ? currentStock + formData.qty
+          : currentStock - formData.qty;
+
+        if (formData.type === "DECREASE" && currentStock < formData.qty) {
+          throw new Error(`Stok saat ini (${currentStock}) tidak cukup untuk dikurangi ${formData.qty}!`);
+        }
+
+        tx.update(pRef, {
+          stock: newStock,
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.name,
+        });
+
+        tx.set(doc(db, "stock_adjustments", adjId), {
+          adjustmentId: adjId,
+          documentNo: adjId,
+          date: displayDate,
+          sku: formData.sku,
+          itemName: prod.itemName,
+          currentStock: currentStock,
+          adjustmentType: formData.type,
+          adjustmentQty: formData.qty,
+          newStock: newStock,
+          reason: formData.reason.trim(),
+          notes: formData.notes.trim(),
+          user: currentUser.name,
+          status: "COMPLETED",
+          executedBy: currentUser.name,
+          executedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        const mvRef = doc(collection(db, "stock_movements"));
+        tx.set(mvRef, {
+          movementId: mvRef.id,
+          date: displayDate,
+          itemCode: formData.sku,
+          itemNameSnapshot: prod.itemName,
+          type: "ADJUSTMENT",
+          referenceId: adjId,
+          qtyIn: formData.type === "INCREASE" ? formData.qty : 0,
+          qtyOut: formData.type === "DECREASE" ? formData.qty : 0,
+          previousStock: currentStock,
+          newStock: newStock,
+          reason: `${formData.type}: ${formData.reason.trim()}`,
+          user: currentUser.name,
+          timestamp: serverTimestamp(),
+        });
+      });
+
+      setIsAdjModalOpen(false);
+      showAlert(`Penyesuaian stok [${adjId}] berhasil disimpan!`, "Sukses");
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal melakukan penyesuaian stok");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleConfirmInitSop(mode: "GENERAL" | "PARTIAL", partialList: any[], sopNotes: string) {
+    try {
+      setLoading(true);
+      const activeCheck = stockOpnames.find((s) => ["OPEN", "COUNTING", "COUNTING_COMPLETED", "ADJUSTMENT"].includes(s.status));
+      if (activeCheck) {
+        setLoading(false);
+        return showAlert(`Masih ada Stock Opname aktif (${activeCheck.documentNo || activeCheck.sopId}).`);
+      }
+
+      const targetItems = mode === "GENERAL"
+        ? products.filter((p) => p.active === true && p.sku)
+        : partialList;
+
+      if (targetItems.length === 0) {
+        setLoading(false);
+        return showAlert("Tidak ada produk yang dipilih untuk Stock Opname!");
+      }
+
+      const today = new Date();
+      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
+      const displayDate = today.toISOString().split("T")[0];
+
+      const snapshotItems = targetItems.map((p) => ({
+        skuId: p.sku,
+        skuCode: p.sku,
+        itemName: p.itemName,
+        systemQtySnapshot: Number(p.stock || 0),
+        physicalQty: null,
+        isCounted: false,
+        countedBy: "",
+        countedAt: null,
+        adjustmentQty: 0,
+        adjustmentReason: "",
+      }));
+
+      const counterRef = doc(db, "counters", `sop_counter_${dateStr}`);
+      const docNo = await runTransaction(db, async (tx) => {
+        const cSnap = await tx.get(counterRef);
+        const curr = cSnap.exists() ? (cSnap.data().current || 0) : 0;
+        const next = curr + 1;
+        const sopId = `SOP-${dateStr}-${String(next).padStart(3, "0")}`;
+
+        tx.set(counterRef, { current: next, date: dateStr, updatedAt: serverTimestamp() });
+        tx.set(doc(db, "stock_opnames", sopId), {
+          sopId: sopId,
+          documentNo: sopId,
+          opnameDate: displayDate,
+          status: "OPEN",
+          opnameType: mode,
+          initializedBy: currentUser.name,
+          initializedAt: serverTimestamp(),
+          totalSku: snapshotItems.length,
+          items: snapshotItems,
+          notes: sopNotes.trim() || `Inisialisasi SOP ${mode}`,
+          postingId: "",
+          postedBy: "",
+          postedAt: null,
+        });
+
+        const aRef = doc(collection(db, "audit_trails"));
+        tx.set(aRef, {
+          auditId: aRef.id,
+          userId: currentUser.name,
+          role: currentUser.role,
+          action: "INITIALIZE_STOCK_OPNAME",
+          documentId: sopId,
+          documentNo: sopId,
+          reason: `Inisialisasi SOP (${mode}) dengan snapshot ${snapshotItems.length} SKU`,
+          timestamp: serverTimestamp(),
+        });
+        return sopId;
+      });
+
+      setIsInitSopModalOpen(false);
+      showAlert(`Stock Opname (${mode}) berhasil diinisialisasi: [${docNo}].`);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal inisialisasi Stock Opname");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSaveSalesOrder(payload: any) {
+    const { editingSoId, selectedCustomer, soItems, shippingRates, shippingCost, courierCode, serviceName } = payload;
     try {
       setLoading(true);
       const today = new Date();
       const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
       const displayDate = today.toISOString().split("T")[0];
 
-      const subtotal = soItems.reduce((acc, it) => acc + it.subtotal, 0);
-      const totalWeight = soItems.reduce((acc, it) => acc + (it.weightInGrams || 0) * it.qty, 0);
-      const grandTotal = subtotal + selectedShippingCost;
+      const subtotal = soItems.reduce((acc: number, it: any) => acc + it.subtotal, 0);
+      const totalWeight = soItems.reduce((acc: number, it: any) => acc + (it.weightInGrams || 0) * it.qty, 0);
+      const grandTotal = subtotal + shippingCost;
       const addr = selectedCustomer.displayAddress || selectedCustomer.fullAddress || "-";
 
       if (editingSoId) {
@@ -577,10 +696,10 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
           items: soItems,
           total: grandTotal,
           totalWeightInGrams: totalWeight,
-          shippingCost: selectedShippingCost,
-          shippingCourier: selectedCourierCode,
-          shippingServiceName: selectedServiceName,
-          shippingRatesSnapshot: shippingRatesSnapshot,
+          shippingCost: shippingCost,
+          shippingCourier: courierCode,
+          shippingServiceName: serviceName,
+          shippingRatesSnapshot: shippingRates,
           updatedAt: serverTimestamp(),
           updatedBy: currentUser.name,
         });
@@ -601,14 +720,14 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
             customerName: selectedCustomer.customerName,
             phone: selectedCustomer.phone || "-",
             address: addr,
-            expedition: selectedServiceName || "Reguler",
+            expedition: serviceName || "Reguler",
             items: soItems,
             total: grandTotal,
             totalWeightInGrams: totalWeight,
-            shippingCost: selectedShippingCost,
-            shippingCourier: selectedCourierCode,
-            shippingServiceName: selectedServiceName,
-            shippingRatesSnapshot: shippingRatesSnapshot,
+            shippingCost: shippingCost,
+            shippingCourier: courierCode,
+            shippingServiceName: serviceName,
+            shippingRatesSnapshot: shippingRates,
             status: "CONFIRMED",
             cancelReason: "",
             createdBy: currentUser.name,
@@ -622,12 +741,6 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
 
       setIsSoModalOpen(false);
       setEditingSoId(null);
-      setSelectedCustomer(null);
-      setCustomerSearchQuery("");
-      setProductSearchQuery("");
-      setSoItems([]);
-      setShippingRatesSnapshot([]);
-      setSelectedShippingCost(0);
       loadAllData();
     } catch (err: any) {
       showAlert(err.message || "Gagal menyimpan Sales Order");
@@ -636,7 +749,6 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
     }
   }
 
-  // Eksekusi Penaikan Status ke PROCESSING Setelah Konfirmasi
   async function executeMarkProcessing() {
     if (!processingConfirmTarget) return;
     const so = processingConfirmTarget;
@@ -649,7 +761,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
         updatedAt: serverTimestamp(),
         updatedBy: currentUser.name,
       });
-      showAlert(`Status SO [${so.soId}] berhasil diubah menjadi PROCESSING! Data produk telah dikunci.`);
+      showAlert(`Status SO [${so.soId}] berhasil diubah menjadi PROCESSING!`);
       loadAllData();
     } catch (err: any) {
       showAlert(err.message || "Gagal mengubah status SO ke Processing");
@@ -659,23 +771,23 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
   }
 
   async function handleSaveProcessingExpedition() {
-    if (!targetProcessingSo || !selectedServiceName) return;
+    if (!targetProcessingSo) return;
     try {
       setLoading(true);
       const subtotalOnly = (targetProcessingSo.items || []).reduce((acc: number, it: any) => acc + (it.subtotal || 0), 0);
-      const newTotal = subtotalOnly + selectedShippingCost;
+      const newTotal = subtotalOnly + (targetProcessingSo.shippingCost || 0);
 
       await updateDoc(doc(db, "sales_orders", targetProcessingSo.soId || targetProcessingSo.id), {
-        shippingCost: selectedShippingCost,
-        shippingCourier: selectedCourierCode,
-        shippingServiceName: selectedServiceName,
-        expedition: selectedServiceName,
+        shippingCost: targetProcessingSo.shippingCost || 0,
+        shippingCourier: targetProcessingSo.shippingCourier || "",
+        shippingServiceName: targetProcessingSo.shippingServiceName || "",
+        expedition: targetProcessingSo.shippingServiceName || "",
         total: newTotal,
         updatedAt: serverTimestamp(),
         updatedBy: currentUser.name,
       });
 
-      showAlert(`Jasa ekspedisi untuk SO [${targetProcessingSo.soId}] berhasil diubah menjadi ${selectedServiceName}!`);
+      showAlert(`Jasa ekspedisi untuk SO [${targetProcessingSo.soId}] berhasil diubah!`);
       setIsEditExpeditionModalOpen(false);
       setTargetProcessingSo(null);
       loadAllData();
@@ -785,10 +897,154 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
         return generatedDoId;
       });
 
-      showAlert(`Delivery Order [${doId}] berhasil diterbitkan dan stok fisik telah terpotong otomatis!`);
+      showAlert(`Delivery Order [${doId}] berhasil diterbitkan dan stok fisik terpotong!`);
       loadAllData();
     } catch (err: any) {
       showAlert(err.message || "Gagal memproses Delivery Order.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Create PO Handler
+  async function handleCreatePurchaseOrder(payload: any) {
+    try {
+      setLoading(true);
+      const today = new Date();
+      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
+      const displayDate = today.toISOString().split("T")[0];
+
+      const counterRef = doc(db, "counters", "purchase_order");
+      const generatedPoId = await runTransaction(db, async (tx) => {
+        const cSnap = await tx.get(counterRef);
+        const curr = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
+        const next = curr + 1;
+        const poId = `PO-${dateStr}-${String(next).padStart(5, "0")}`;
+
+        tx.set(counterRef, { currentNumber: next, updatedAt: serverTimestamp() });
+        tx.set(doc(db, "purchase_orders", poId), {
+          poId: poId,
+          documentNo: poId,
+          poDate: displayDate,
+          supplier: payload.supplier.trim(),
+          supplierAddress: payload.address.trim(),
+          supplierPhone: payload.phone.trim(),
+          notes: payload.notes.trim(),
+          status: "OPEN",
+          items: payload.items.map((it: any) => ({
+            sku: it.sku,
+            itemName: it.itemName,
+            qty: Number(it.qty),
+            purchasingPrice: Number(it.purchasingPrice),
+            subtotal: Number(it.subtotal),
+            receivedQty: 0,
+            weightInGrams: Number(it.weightInGrams || 0),
+          })),
+          total: payload.items.reduce((acc: number, it: any) => acc + Number(it.subtotal), 0),
+          createdBy: currentUser.name,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        return poId;
+      });
+
+      setIsCreatePoModalOpen(false);
+      showAlert(`Purchase Order [${generatedPoId}] berhasil diterbitkan dengan status OPEN!`, "Sukses");
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menerbitkan Purchase Order.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Receiving Handler (PO COMPLETED jika kurang/pas)
+  async function handleExecuteReceiving(payload: { po: any; receivedMap: Record<string, number>; notes: string }) {
+    try {
+      setLoading(true);
+      const { po, receivedMap, notes } = payload;
+      const today = new Date();
+      const displayDate = today.toISOString().split("T")[0];
+      const rcvRef = doc(collection(db, "receivings"));
+
+      await runTransaction(db, async (tx) => {
+        const poRef = doc(db, "purchase_orders", po.poId || po.id);
+        const poSnap = await tx.get(poRef);
+        if (!poSnap.exists()) throw new Error("Dokumen PO tidak ditemukan!");
+        const currentPo = poSnap.data();
+
+        const receivedList: any[] = [];
+        const updatedPoItems = (currentPo.items || []).map((it: any) => {
+          const qtyIn = Number(receivedMap[it.sku] || 0);
+          if (qtyIn > 0) {
+            receivedList.push({
+              sku: it.sku,
+              itemName: it.itemName,
+              qtyReceived: qtyIn,
+              purchasingPrice: it.purchasingPrice || 0,
+            });
+
+            const pRef = doc(db, "products", it.sku);
+            const liveProd = products.find((p) => p.sku === it.sku);
+            const currentStock = Number(liveProd?.stock || 0);
+            const newStock = currentStock + qtyIn;
+
+            tx.update(pRef, {
+              stock: newStock,
+              lastReceiving: displayDate,
+              updatedAt: serverTimestamp(),
+              updatedBy: currentUser.name,
+            });
+
+            const mvRef = doc(collection(db, "stock_movements"));
+            tx.set(mvRef, {
+              movementId: mvRef.id,
+              date: displayDate,
+              itemCode: it.sku,
+              itemNameSnapshot: it.itemName,
+              type: "RECEIVING",
+              referenceId: po.poId,
+              qtyIn: qtyIn,
+              qtyOut: 0,
+              previousStock: currentStock,
+              newStock: newStock,
+              reason: `Penerimaan Barang PO ${po.poId}`,
+              user: currentUser.name,
+              timestamp: serverTimestamp(),
+            });
+
+            return { ...it, receivedQty: (it.receivedQty || 0) + qtyIn };
+          }
+          return it;
+        });
+
+        // PO dinyatakan COMPLETED
+        tx.update(poRef, {
+          items: updatedPoItems,
+          status: "COMPLETED",
+          completedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.name,
+        });
+
+        tx.set(rcvRef, {
+          receivingId: rcvRef.id,
+          poId: po.poId,
+          date: displayDate,
+          supplier: po.supplier || "-",
+          items: receivedList,
+          notes: notes.trim(),
+          createdBy: currentUser.name,
+          createdAt: serverTimestamp(),
+        });
+      });
+
+      setIsReceivingModalOpen(false);
+      setSelectedPoForReceiving(null);
+      showAlert(`Barang berhasil diterima dan Purchase Order [${payload.po.poId}] dinyatakan SELESAI (COMPLETED)!`, "Sukses");
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal memproses penerimaan barang.");
     } finally {
       setLoading(false);
     }
@@ -859,109 +1115,6 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
     }
   }
 
-  async function executeProcessReceiving() {
-    if (!selectedPoForReceiving) return;
-    setIsReceivingConfirmOpen(false);
-
-    try {
-      setLoading(true);
-      const today = new Date();
-      const displayDate = today.toISOString().split("T")[0];
-      const rcvRef = doc(collection(db, "receivings"));
-      const rcvId = rcvRef.id;
-
-      await runTransaction(db, async (tx) => {
-        const poRef = doc(db, "purchase_orders", selectedPoForReceiving.poId || selectedPoForReceiving.id);
-        const poSnap = await tx.get(poRef);
-        if (!poSnap.exists()) throw new Error("Dokumen PO tidak ditemukan!");
-        const currentPo = poSnap.data();
-
-        if (currentPo.status === "CANCELLED" || currentPo.status === "COMPLETED") {
-          throw new Error("PO ini sudah tidak dapat diproses receiving!");
-        }
-
-        const receivedItemsList: any[] = [];
-        const updatedPoItems = (currentPo.items || []).map((poIt: any) => {
-          const qtyIn = Number(receivedQtyInputs[poIt.sku] || 0);
-          if (qtyIn > 0) {
-            receivedItemsList.push({
-              sku: poIt.sku,
-              itemName: poIt.itemName,
-              qtyReceived: qtyIn,
-              purchasingPrice: poIt.purchasingPrice || 0,
-              weightInGrams: poIt.weightInGrams || 0,
-            });
-
-            const pRef = doc(db, "products", poIt.sku);
-            const liveProd = products.find((p) => p.sku === poIt.sku);
-            const currentStock = Number(liveProd?.stock || 0);
-            const newStock = currentStock + qtyIn;
-
-            tx.update(pRef, {
-              stock: newStock,
-              lastReceiving: displayDate,
-              updatedAt: serverTimestamp(),
-              updatedBy: currentUser.name,
-            });
-
-            const mvRef = doc(collection(db, "stock_movements"));
-            tx.set(mvRef, {
-              movementId: mvRef.id,
-              date: displayDate,
-              itemCode: poIt.sku,
-              itemNameSnapshot: poIt.itemName,
-              type: "RECEIVING",
-              referenceId: selectedPoForReceiving.poId,
-              qtyIn: qtyIn,
-              qtyOut: 0,
-              previousStock: currentStock,
-              newStock: newStock,
-              reason: `Receiving PO ${selectedPoForReceiving.poId}`,
-              user: currentUser.name,
-              timestamp: serverTimestamp(),
-            });
-
-            return { ...poIt, receivedQty: (poIt.receivedQty || 0) + qtyIn };
-          }
-          return poIt;
-        });
-
-        if (receivedItemsList.length === 0) {
-          throw new Error("Jumlah barang yang diterima wajib diisi minimal 1 item > 0!");
-        }
-
-        const isAllDone = updatedPoItems.every((it: any) => (it.receivedQty || 0) >= it.qty);
-        tx.update(poRef, {
-          items: updatedPoItems,
-          status: isAllDone ? "COMPLETED" : "PARTIAL",
-          updatedAt: serverTimestamp(),
-        });
-
-        tx.set(rcvRef, {
-          receivingId: rcvId,
-          poId: selectedPoForReceiving.poId,
-          date: displayDate,
-          items: receivedItemsList,
-          notes: receivingNotes.trim(),
-          createdBy: currentUser.name,
-          createdAt: serverTimestamp(),
-        });
-      });
-
-      setIsReceivingModalOpen(false);
-      setSelectedPoForReceiving(null);
-      setReceivedQtyInputs({});
-      setReceivingNotes("");
-      showAlert("Receiving berhasil disimpan! Saldo stok fisik produk langsung bertambah.", "Sukses");
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal memproses receiving.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Filter SO Berdasarkan Status
   const displayedSalesOrders = useMemo(() => {
     if (soStatusFilter === "ALL") return salesOrders;
     return salesOrders.filter((s) => s.status === soStatusFilter);
@@ -981,7 +1134,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
 
   return (
     <div className="flex h-screen bg-[#FFF5F6] font-sans text-rose-950">
-      {/* SIDEBAR MIRROR */}
+      {/* SIDEBAR */}
       <aside className="w-72 bg-[#4A2033] text-rose-100 flex flex-col shadow-2xl border-r border-[#6E354F]">
         <div className="p-5 border-b border-[#6E354F]">
           <div className="flex items-center gap-2">
@@ -1020,10 +1173,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
         <div className="p-4 border-t border-[#6E354F]">
           <button
             type="button"
-            onClick={() => {
-              document.cookie = "admin_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-              router.push("/login");
-            }}
+            onClick={() => setIsLogoutConfirmOpen(true)}
             className="w-full py-2 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-semibold rounded-lg shadow"
           >
             Keluar Akun
@@ -1031,7 +1181,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
         </div>
       </aside>
 
-      {/* CONTENT AREA */}
+      {/* WORKSPACE */}
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b border-rose-100 px-8 py-4 flex items-center justify-between shadow-xs">
           <div>
@@ -1083,7 +1233,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
             </div>
           )}
 
-          {/* TAB 2: SALES ORDER & DELIVERY ORDER LENGKAP */}
+          {/* TAB 2: SALES ORDER & DELIVERY ORDER */}
           {currentTab === "sales" && (
             <div className="space-y-4">
               <div className="flex justify-between items-center border-b border-rose-200 pb-2">
@@ -1127,7 +1277,6 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                 )}
               </div>
 
-              {/* TAB SO TAMPILKAN SEMUA DENGAN FILTER STATUS */}
               {salesSubTab === "so" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
                   <div className="flex justify-between items-center">
@@ -1136,12 +1285,12 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                       type="button"
                       onClick={() => {
                         setEditingSoId(null);
-                        setSelectedCustomer(null);
-                        setCustomerSearchQuery("");
-                        setProductSearchQuery("");
-                        setSoItems([]);
-                        setShippingRatesSnapshot([]);
-                        setSelectedShippingCost(0);
+                        setSoModalInitCustomer(null);
+                        setSoModalInitItems([]);
+                        setSoModalInitRates([]);
+                        setSoModalInitCost(0);
+                        setSoModalInitCourier("");
+                        setSoModalInitService("");
                         setIsSoModalOpen(true);
                       }}
                       className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
@@ -1197,32 +1346,39 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                               </span>
                             </td>
                             <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
-                              {/* Tombol Share WhatsApp Sesuai Format */}
                               <button
                                 type="button"
-                                onClick={() => handleShareWhatsApp(so)}
+                                onClick={() => {
+                                  const msg = buildWhatsAppMessage(so);
+                                  const cleanPhone = String(so.phone || "").replace(/[^0-9]/g, "");
+                                  let targetUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+                                  if (cleanPhone) {
+                                    const formattedPhone = cleanPhone.startsWith("0") ? "62" + cleanPhone.slice(1) : cleanPhone;
+                                    targetUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(msg)}`;
+                                  }
+                                  window.open(targetUrl, "_blank");
+                                }}
                                 className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
                               >
                                 💬 WA
                               </button>
 
-                              {/* Aksi Berdasarkan Status */}
                               {so.status === "CONFIRMED" && (
                                 <>
                                   <button
                                     type="button"
                                     onClick={() => {
                                       setEditingSoId(so.soId || so.id);
-                                      setSelectedCustomer({
+                                      setSoModalInitCustomer({
                                         customerName: so.customerName,
                                         phone: so.phone,
                                         displayAddress: so.address,
                                       });
-                                      setSoItems(so.items || []);
-                                      setShippingRatesSnapshot(so.shippingRatesSnapshot || []);
-                                      setSelectedShippingCost(so.shippingCost || 0);
-                                      setSelectedCourierCode(so.shippingCourier || "");
-                                      setSelectedServiceName(so.shippingServiceName || "");
+                                      setSoModalInitItems(so.items || []);
+                                      setSoModalInitRates(so.shippingRatesSnapshot || []);
+                                      setSoModalInitCost(so.shippingCost || 0);
+                                      setSoModalInitCourier(so.shippingCourier || "");
+                                      setSoModalInitService(so.shippingServiceName || "");
                                       setIsSoModalOpen(true);
                                     }}
                                     className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold"
@@ -1245,9 +1401,6 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                                     type="button"
                                     onClick={() => {
                                       setTargetProcessingSo(so);
-                                      setSelectedShippingCost(so.shippingCost || 0);
-                                      setSelectedCourierCode(so.shippingCourier || "");
-                                      setSelectedServiceName(so.shippingServiceName || so.expedition || "");
                                       setIsEditExpeditionModalOpen(true);
                                     }}
                                     className="px-2.5 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded text-[11px] font-bold"
@@ -1282,7 +1435,6 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                 </div>
               )}
 
-              {/* Sub DO */}
               {salesSubTab === "do" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
                   <span className="text-xs font-bold text-rose-950">Daftar Delivery Order (Stok Telah Dipotong)</span>
@@ -1326,6 +1478,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                   { key: "card", label: "Kartu Mutasi (Stock Ledger)" },
                   { key: "adjustment", label: `Stock Adjustment (${stockAdjustments.length})` },
                   { key: "opname", label: "Stock Opname" },
+                  { key: "movement", label: `Histori Mutasi (${stockMovements.length})` },
                 ].map((st) => (
                   <button
                     key={st.key}
@@ -1340,39 +1493,107 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                 ))}
               </div>
 
+              {/* 3.1 PRODUK & STOK */}
               {invSubTab === "products" && (
-                <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs">
-                  <table className="w-full text-xs text-left">
-                    <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
-                      <tr>
-                        <th className="p-2.5">SKU</th>
-                        <th className="p-2.5">Nama Produk</th>
-                        <th className="p-2.5">Stok Fisik</th>
-                        <th className="p-2.5">HPP</th>
-                        <th className="p-2.5">Harga Net</th>
-                        <th className="p-2.5">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-rose-50">
-                      {products.map((p) => (
-                        <tr key={p.id}>
-                          <td className="p-2.5 font-mono font-bold">{p.sku}</td>
-                          <td className="p-2.5 font-semibold">{p.itemName}</td>
-                          <td className="p-2.5 font-bold text-emerald-600">{p.stock || 0} pcs</td>
-                          <td className="p-2.5">{formatRupiah(Number(p.purchasingPrice || 0))}</td>
-                          <td className="p-2.5">{formatRupiah(Number(p.netPrice || 0))}</td>
-                          <td className="p-2.5">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.active ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
-                              {p.active ? "Aktif" : "Nonaktif"}
-                            </span>
-                          </td>
+                <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-rose-950 uppercase">Master Produk & Stok Gudang</span>
+                      <p className="text-[11px] text-slate-500">Klik tombol Edit untuk memperbarui parameter produk</p>
+                    </div>
+                    {isRootAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingProduct(false);
+                          setProductFormData({
+                            sku: "",
+                            itemName: "",
+                            familyCode: families[0]?.familyCode || "",
+                            weightInGrams: 0,
+                            active: true,
+                            purchasingPrice: 0,
+                            netPrice: 0,
+                            initialStock: 0,
+                          });
+                          setIsProductModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                      >
+                        + Tambah Produk Baru
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                        <tr>
+                          <th className="p-2.5">SKU</th>
+                          <th className="p-2.5">Family</th>
+                          <th className="p-2.5">Nama Produk</th>
+                          <th className="p-2.5">Stok Fisik</th>
+                          <th className="p-2.5">HPP (Beli)</th>
+                          <th className="p-2.5">Harga Jual</th>
+                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5 text-right">Aksi</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-rose-50">
+                        {products
+                          .filter((p) => {
+                            if (!search.trim()) return true;
+                            const q = search.toLowerCase();
+                            return (
+                              (p.sku || "").toLowerCase().includes(q) ||
+                              (p.itemName || "").toLowerCase().includes(q) ||
+                              (p.familyCode || "").toLowerCase().includes(q)
+                            );
+                          })
+                          .map((p) => (
+                            <tr key={p.id} className="hover:bg-rose-50/40 transition">
+                              <td className="p-2.5 font-mono font-bold text-rose-900 whitespace-nowrap">{p.sku}</td>
+                              <td className="p-2.5 font-mono text-slate-600 whitespace-nowrap">{p.familyCode || "-"}</td>
+                              <td className="p-2.5 font-semibold text-rose-950">{p.itemName}</td>
+                              <td className="p-2.5 font-bold text-emerald-600 whitespace-nowrap">{p.stock || 0} pcs</td>
+                              <td className="p-2.5 whitespace-nowrap">{formatRupiah(Number(p.purchasingPrice || 0))}</td>
+                              <td className="p-2.5 whitespace-nowrap font-bold text-rose-900">{formatRupiah(Number(p.netPrice || 0))}</td>
+                              <td className="p-2.5 whitespace-nowrap">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.active ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+                                  {p.active ? "Aktif" : "Nonaktif"}
+                                </span>
+                              </td>
+                              <td className="p-2.5 text-right whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsEditingProduct(true);
+                                    setProductFormData({
+                                      sku: p.sku,
+                                      itemName: p.itemName,
+                                      familyCode: p.familyCode || "",
+                                      weightInGrams: p.weightInGrams || 0,
+                                      active: p.active !== false,
+                                      purchasingPrice: p.purchasingPrice || 0,
+                                      netPrice: p.netPrice || 0,
+                                      initialStock: p.stock || 0,
+                                    });
+                                    setIsProductModalOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold shadow-xs"
+                                >
+                                  ✏️ Edit
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 
+              {/* 3.2 KARTU STOK / LEDGER */}
               {invSubTab === "card" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
                   <div className="flex justify-between items-center gap-4">
@@ -1416,9 +1637,86 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                 </div>
               )}
 
+              {/* 3.3 STOCK ADJUSTMENT */}
+              {invSubTab === "adjustment" && (
+                <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
+                  <div className="flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <span className="text-xs font-bold text-rose-950 uppercase">Penyesuaian Stok (Stock Adjustment)</span>
+                      <p className="text-[11px] text-slate-500">Koreksi saldo fisik bertambah atau berkurang secara atomik</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsAdjModalOpen(true)}
+                      className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                    >
+                      + Buat Penyesuaian Stok
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                        <tr>
+                          <th className="p-2.5">No Dokumen</th>
+                          <th className="p-2.5">Tanggal</th>
+                          <th className="p-2.5">SKU</th>
+                          <th className="p-2.5">Nama Produk</th>
+                          <th className="p-2.5">Tipe</th>
+                          <th className="p-2.5">Qty</th>
+                          <th className="p-2.5">Stok Sebelum</th>
+                          <th className="p-2.5">Stok Baru</th>
+                          <th className="p-2.5">Alasan</th>
+                          <th className="p-2.5">Petugas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-rose-50">
+                        {stockAdjustments.map((adj) => (
+                          <tr key={adj.id} className="hover:bg-rose-50/40 transition">
+                            <td className="p-2.5 font-mono font-bold text-rose-900">{adj.documentNo || adj.adjustmentId}</td>
+                            <td className="p-2.5">{adj.date}</td>
+                            <td className="p-2.5 font-mono font-bold">{adj.sku}</td>
+                            <td className="p-2.5 font-medium">{adj.itemName}</td>
+                            <td className="p-2.5 font-bold">
+                              <span className={`px-2 py-0.5 rounded text-[10px] ${
+                                adj.adjustmentType === "INCREASE" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
+                              }`}>
+                                {adj.adjustmentType}
+                              </span>
+                            </td>
+                            <td className="p-2.5 font-bold">
+                              {adj.adjustmentType === "INCREASE" ? `+${adj.adjustmentQty}` : `-${adj.adjustmentQty}`}
+                            </td>
+                            <td className="p-2.5 text-slate-500">{adj.currentStock ?? "-"}</td>
+                            <td className="p-2.5 font-bold text-rose-950">{adj.newStock ?? "-"}</td>
+                            <td className="p-2.5 max-w-xs truncate" title={adj.reason}>{adj.reason || "-"}</td>
+                            <td className="p-2.5">{adj.user || adj.executedBy || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 3.4 STOCK OPNAME */}
               {invSubTab === "opname" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                  <span className="text-xs font-bold text-rose-950">Audit Stock Opname</span>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-rose-950 uppercase">Audit Fisik Stock Opname</span>
+                      <p className="text-[11px] text-slate-500">Pilih mode audit General atau Parsial</p>
+                    </div>
+                    {isRootAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setIsInitSopModalOpen(true)}
+                        className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                      >
+                        + Inisialisasi Stock Opname
+                      </button>
+                    )}
+                  </div>
                   <table className="w-full text-xs text-left">
                     <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
                       <tr>
@@ -1458,80 +1756,237 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                   </table>
                 </div>
               )}
+
+              {/* 3.5 HISTORI MUTASI */}
+              {invSubTab === "movement" && (
+                <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
+                  <div className="flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <span className="text-xs font-bold text-rose-950 uppercase">Histori Mutasi Stok (stock_movements)</span>
+                      <p className="text-[11px] text-slate-500">Catatan kronologis keluar-masuk barang</p>
+                    </div>
+                    <span className="text-xs text-slate-500 font-medium">Total: <b>{stockMovements.length}</b></span>
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                        <tr>
+                          <th className="p-2.5">Tanggal</th>
+                          <th className="p-2.5">SKU</th>
+                          <th className="p-2.5">Nama Barang</th>
+                          <th className="p-2.5">Tipe Mutasi</th>
+                          <th className="p-2.5">Masuk</th>
+                          <th className="p-2.5">Keluar</th>
+                          <th className="p-2.5">Stok Awal</th>
+                          <th className="p-2.5">Stok Akhir</th>
+                          <th className="p-2.5">Referensi</th>
+                          <th className="p-2.5">Petugas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-rose-50">
+                        {stockMovements.map((m, idx) => (
+                          <tr key={m.id || idx} className="hover:bg-rose-50/40 transition">
+                            <td className="p-2.5 text-slate-600">{m.date || "-"}</td>
+                            <td className="p-2.5 font-mono font-bold text-rose-900">{m.itemCode || "-"}</td>
+                            <td className="p-2.5 font-medium">{m.itemNameSnapshot || "-"}</td>
+                            <td className="p-2.5 font-bold">
+                              <span className={`px-2 py-0.5 rounded text-[10px] ${
+                                m.type === "RECEIVING" ? "bg-emerald-100 text-emerald-800" :
+                                m.type === "DELIVERY" ? "bg-blue-100 text-blue-800" :
+                                m.type === "ADJUSTMENT" ? "bg-amber-100 text-amber-800" :
+                                "bg-purple-100 text-purple-800"
+                              }`}>
+                                {m.type || "MUTASI"}
+                              </span>
+                            </td>
+                            <td className="p-2.5 font-bold text-emerald-600">{Number(m.qtyIn || 0) > 0 ? `+${m.qtyIn}` : "-"}</td>
+                            <td className="p-2.5 font-bold text-red-600">{Number(m.qtyOut || 0) > 0 ? `-${m.qtyOut}` : "-"}</td>
+                            <td className="p-2.5 text-slate-600">{m.previousStock ?? "-"}</td>
+                            <td className="p-2.5 font-bold text-rose-950">{m.newStock ?? "-"}</td>
+                            <td className="p-2.5 text-[11px] text-slate-600">{m.referenceId || "-"}</td>
+                            <td className="p-2.5">{m.user || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* TAB 4: PURCHASE ORDER & RECEIVING */}
+          {/* TAB 4: PURCHASE ORDER & SUB-MENU RECEIVING */}
           {currentTab === "purchase" && (
             <div className="space-y-4">
-              <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                <span className="text-xs font-bold text-rose-950">Daftar Purchase Order & Penerimaan Fisik</span>
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
-                    <tr>
-                      <th className="p-2.5">No PO</th>
-                      <th className="p-2.5">Tanggal</th>
-                      <th className="p-2.5">Supplier</th>
-                      <th className="p-2.5">Total Nilai</th>
-                      <th className="p-2.5">Status</th>
-                      <th className="p-2.5 text-right">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-rose-50">
-                    {purchaseOrders.map((po) => {
-                      const isCompleteOrCancelled = po.status === "COMPLETED" || po.status === "CANCELLED";
-                      const isOpen = po.status === "OPEN" || po.status === "CONFIRMED" || po.status === "PARTIAL";
-
-                      return (
-                        <tr key={po.id}>
-                          <td className="p-2.5 font-mono font-bold">{po.poId || po.documentNo}</td>
-                          <td className="p-2.5">{po.poDate}</td>
-                          <td className="p-2.5">{po.supplier}</td>
-                          <td className="p-2.5 font-bold">{formatRupiah(Number(po.total || 0))}</td>
-                          <td className="p-2.5 font-bold text-blue-600">{po.status}</td>
-                          <td className="p-2.5 text-right space-x-2">
-                            {!isCompleteOrCancelled && isOpen && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedPoForReceiving(po);
-                                    const initMap: Record<string, number> = {};
-                                    (po.items || []).forEach((it: any) => {
-                                      initMap[it.sku] = Math.max(0, it.qty - (it.receivedQty || 0));
-                                    });
-                                    setReceivedQtyInputs(initMap);
-                                    setReceivingNotes("");
-                                    setIsReceivingModalOpen(true);
-                                  }}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
-                                >
-                                  📥 Proses Receiving
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setPoCancelTarget(po);
-                                    setPoCancelReason("");
-                                    setIsPoCancelConfirmOpen(true);
-                                  }}
-                                  className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
-                                >
-                                  Batal
-                                </button>
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="flex gap-2 border-b border-rose-200 pb-2">
+                <button
+                  type="button"
+                  onClick={() => setPoSubTab("po_list")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    poSubTab === "po_list" ? "bg-[#BE185D] text-white shadow" : "bg-white text-rose-900 border border-rose-200"
+                  }`}
+                >
+                  Purchase Orders ({purchaseOrders.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPoSubTab("receiving_list")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    poSubTab === "receiving_list" ? "bg-[#BE185D] text-white shadow" : "bg-white text-rose-900 border border-rose-200"
+                  }`}
+                >
+                  Sub-Menu Receiving Masuk ({receivings.length})
+                </button>
               </div>
+
+              {/* 4.1 DAFTAR PO */}
+              {poSubTab === "po_list" && (
+                <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-rose-950 uppercase">Daftar Purchase Order</span>
+                      <p className="text-[11px] text-slate-500">Pemesanan barang ke supplier dan penerimaan logistik</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatePoModalOpen(true)}
+                      className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                    >
+                      + Buat PO Baru
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                        <tr>
+                          <th className="p-2.5">No PO</th>
+                          <th className="p-2.5">Tanggal</th>
+                          <th className="p-2.5">Supplier</th>
+                          <th className="p-2.5">Item Pesanan</th>
+                          <th className="p-2.5">Total Nilai</th>
+                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-rose-50">
+                        {purchaseOrders.map((po) => {
+                          const isDone = po.status === "COMPLETED" || po.status === "CANCELLED";
+                          return (
+                            <tr key={po.id} className="hover:bg-rose-50/30 transition">
+                              <td className="p-2.5 font-mono font-bold text-rose-900">{po.poId || po.documentNo}</td>
+                              <td className="p-2.5">{po.poDate}</td>
+                              <td className="p-2.5 font-semibold">{po.supplier}</td>
+                              <td className="p-2.5">
+                                {(po.items || []).map((it: any, i: number) => (
+                                  <div key={i} className="text-[11px]">
+                                    • {it.itemName} (Pesan: {it.qty} | Datang: {it.receivedQty || 0})
+                                  </div>
+                                ))}
+                              </td>
+                              <td className="p-2.5 font-bold text-emerald-600">{formatRupiah(Number(po.total || 0))}</td>
+                              <td className="p-2.5 font-bold">
+                                <span className={`px-2 py-0.5 rounded text-[10px] ${
+                                  po.status === "COMPLETED" ? "bg-emerald-100 text-emerald-800" :
+                                  po.status === "OPEN" ? "bg-blue-100 text-blue-800" :
+                                  po.status === "PARTIAL" ? "bg-amber-100 text-amber-800" :
+                                  "bg-red-100 text-red-800"
+                                }`}>
+                                  {po.status}
+                                </span>
+                              </td>
+                              <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                                {!isDone && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedPoForReceiving(po);
+                                        setIsReceivingModalOpen(true);
+                                      }}
+                                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold shadow-xs"
+                                    >
+                                      📥 Proses Receiving
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setPoCancelTarget(po);
+                                        setPoCancelReason("");
+                                        setIsPoCancelConfirmOpen(true);
+                                      }}
+                                      className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold shadow-xs"
+                                    >
+                                      Batal
+                                    </button>
+                                  </>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 4.2 SUB-MENU RECEIVING MASUK */}
+              {poSubTab === "receiving_list" && (
+                <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
+                  <div>
+                    <span className="text-xs font-bold text-rose-950 uppercase">Riwayat Penerimaan Barang (Receivings)</span>
+                    <p className="text-[11px] text-slate-500">Log bukti penerimaan barang masuk ke gudang dari supplier</p>
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                        <tr>
+                          <th className="p-2.5">No. Receiving</th>
+                          <th className="p-2.5">Ref No. PO</th>
+                          <th className="p-2.5">Tanggal</th>
+                          <th className="p-2.5">Supplier</th>
+                          <th className="p-2.5">Barang Diterima</th>
+                          <th className="p-2.5">Petugas</th>
+                          <th className="p-2.5">Catatan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-rose-50">
+                        {receivings.map((r) => (
+                          <tr key={r.id} className="hover:bg-rose-50/30 transition">
+                            <td className="p-2.5 font-mono font-bold text-rose-900">{r.receivingId}</td>
+                            <td className="p-2.5 font-mono text-blue-700 font-bold">{r.poId}</td>
+                            <td className="p-2.5">{r.date}</td>
+                            <td className="p-2.5 font-medium">{r.supplier || "-"}</td>
+                            <td className="p-2.5">
+                              {(r.items || []).map((it: any, i: number) => (
+                                <div key={i} className="text-[11px]">
+                                  • {it.itemName}: <b>{it.qtyReceived} pcs</b>
+                                </div>
+                              ))}
+                            </td>
+                            <td className="p-2.5">{r.createdBy}</td>
+                            <td className="p-2.5 text-slate-500">{r.notes || "-"}</td>
+                          </tr>
+                        ))}
+                        {receivings.length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="p-5 text-center text-slate-400">
+                              Belum ada catatan penerimaan barang masuk.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* TAB 5: REPORTS (READ-ONLY SESUAI ANDROID) */}
+          {/* TAB 5: REPORTS */}
           {currentTab === "reports" && (
             <div className="space-y-4">
               <div className="flex gap-2 border-b border-rose-200 pb-2">
@@ -1558,7 +2013,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
               </div>
 
               <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                <span className="text-xs font-bold text-rose-950 uppercase">Data Historis Laporan (Mode Read-Only Murni Tanpa Edit)</span>
+                <span className="text-xs font-bold text-rose-950 uppercase">Data Historis Laporan</span>
 
                 <div className="overflow-x-auto text-xs">
                   {reportSubTab === "so" && (
@@ -1603,7 +2058,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                   {reportSubTab === "receiving" && (
                     <table className="w-full text-left">
                       <thead className="bg-rose-50 text-rose-900 font-bold">
-                        <tr><th className="p-2">No Receiving</th><th className="p-2">Ref PO</th><th className="p-2">Tanggal</th><th className="p-2">Petugas</th><th className="p-2">Catatan</th></tr>
+                        <tr><th className="p-2">No Receiving</th><th className="p-2">Ref PO</th><th className="p-2">Tanggal</th><th className="p-2">Petugas</th><th className="p-2.5">Catatan</th></tr>
                       </thead>
                       <tbody className="divide-y divide-rose-50">
                         {receivings.map((r) => (
@@ -1629,7 +2084,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                   {reportSubTab === "stock" && (
                     <table className="w-full text-left">
                       <thead className="bg-rose-50 text-rose-900 font-bold">
-                        <tr><th className="p-2">SKU</th><th className="p-2">Nama Produk</th><th className="p-2">Stok Fisik</th><th className="p-2">HPP (Beli)</th><th className="p-2">Harga Net</th></tr>
+                        <tr><th className="p-2">SKU</th><th className="p-2">Nama Produk</th><th className="p-2.5">Stok Fisik</th><th className="p-2">HPP (Beli)</th><th className="p-2">Harga Net</th></tr>
                       </thead>
                       <tbody className="divide-y divide-rose-50">
                         {products.map((p) => (
@@ -1805,7 +2260,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                   </div>
 
                   <div className="p-3 bg-rose-50/70 border border-rose-100 rounded-lg text-xs space-y-1">
-                    <div className="font-bold text-rose-950">Alamat Terformat (Mirror Asal Ongkir):</div>
+                    <div className="font-bold text-rose-950">Alamat Terformat:</div>
                     <div className="text-rose-800">{storeSettings.storeAddress || "Belum disimpan"}</div>
                   </div>
 
@@ -1820,7 +2275,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
                 </form>
               </div>
 
-              {/* SECTION B: PENGATURAN API KEY RAJAONGKIR */}
+              {/* PENGATURAN API KEY RAJAONGKIR */}
               <div className="space-y-4">
                 <div>
                   <h3 className="text-sm font-bold text-rose-950 uppercase">Pengaturan API Key RajaOngkir (Komerce v1)</h3>
@@ -1883,7 +2338,7 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
         </section>
       </main>
 
-      {/* MODAL POP-UP KONFIRMASI UJI API KEY DENGAN TOMBOL OK */}
+      {/* POP-UP MODAL KONFIRMASI UJI API KEY */}
       {isApiSuccessModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-emerald-200 text-center">
@@ -1908,7 +2363,111 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
         </div>
       )}
 
-      {/* POP-UP KONFIRMASI TOMBOL PROCESSING */}
+      {/* MODAL MODULAR */}
+      <ProductModal
+        isOpen={isProductModalOpen}
+        isEditing={isEditingProduct}
+        families={families}
+        initialData={productFormData}
+        onClose={() => setIsProductModalOpen(false)}
+        onConfirmSave={handleSaveProduct}
+      />
+
+      <StockAdjustmentModal
+        isOpen={isAdjModalOpen}
+        products={products}
+        onClose={() => setIsAdjModalOpen(false)}
+        onExecuteAdjustment={handleExecuteStockAdjustment}
+        showAlert={showAlert}
+      />
+
+      <StockOpnameModal
+        isOpen={isInitSopModalOpen}
+        products={products}
+        families={families}
+        currentUserName={currentUser.name}
+        onClose={() => setIsInitSopModalOpen(false)}
+        onConfirmInit={handleConfirmInitSop}
+        showAlert={showAlert}
+      />
+
+      <SalesOrderModal
+        isOpen={isSoModalOpen}
+        editingSoId={editingSoId}
+        customers={customers}
+        products={products}
+        storeOriginId={storeSettings.defaultOriginId || 4997}
+        initialCustomer={soModalInitCustomer}
+        initialItems={soModalInitItems}
+        initialRates={soModalInitRates}
+        initialCost={soModalInitCost}
+        initialCourier={soModalInitCourier}
+        initialService={soModalInitService}
+        onClose={() => setIsSoModalOpen(false)}
+        onSaveSo={handleSaveSalesOrder}
+        showAlert={showAlert}
+      />
+
+      <CreatePurchaseOrderModal
+        isOpen={isCreatePoModalOpen}
+        products={products}
+        onClose={() => setIsCreatePoModalOpen(false)}
+        onSubmitPo={handleCreatePurchaseOrder}
+        showAlert={showAlert}
+      />
+
+      <ReceivingModal
+        isOpen={isReceivingModalOpen}
+        selectedPo={selectedPoForReceiving}
+        onClose={() => {
+          setIsReceivingModalOpen(false);
+          setSelectedPoForReceiving(null);
+        }}
+        onExecuteReceiving={handleExecuteReceiving}
+        showAlert={showAlert}
+      />
+
+      {/* MODAL GANTI EKSPEDISI DARI SNAPSHOT (SO PROCESSING) */}
+      {isEditExpeditionModalOpen && targetProcessingSo && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-rose-100">
+            <h3 className="text-base font-bold text-rose-950 mb-1">Ganti Ekspedisi (SO Processing)</h3>
+            <p className="text-xs text-rose-600 font-mono mb-4">SO: {targetProcessingSo.soId} | Pilihan dari snapshot pembuatan SO</p>
+
+            <div className="space-y-2 mb-4">
+              {(targetProcessingSo.shippingRatesSnapshot || []).map((r: any, idx: number) => (
+                <div
+                  key={idx}
+                  onClick={() => {
+                    setTargetProcessingSo({
+                      ...targetProcessingSo,
+                      shippingCost: r.cost,
+                      shippingCourier: r.courier,
+                      shippingServiceName: r.serviceName,
+                    });
+                  }}
+                  className={`p-3 rounded-lg border text-xs cursor-pointer flex justify-between items-center ${
+                    targetProcessingSo.shippingServiceName === r.serviceName ? "bg-[#BE185D] text-white font-bold" : "bg-white border-rose-200"
+                  }`}
+                >
+                  <div>
+                    <div>{r.serviceName}</div>
+                    <div className="text-[10px] opacity-80">Estimasi: {r.etd || "-"}</div>
+                  </div>
+                  <div className="font-bold">{formatRupiah(r.cost)}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-rose-100">
+              <button type="button" onClick={() => setIsEditExpeditionModalOpen(false)} className="px-3 py-1.5 bg-slate-100 rounded text-xs font-bold">Tutup</button>
+              <button type="button" onClick={handleSaveProcessingExpedition} className="px-4 py-1.5 bg-[#BE185D] text-white rounded text-xs font-bold">Simpan Ekspedisi</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP KONFIRMASI STATUS PROCESSING */}
       {processingConfirmTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-purple-200 text-center">
@@ -1934,259 +2493,6 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
               >
                 Ya, Ubah Status
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL BUAT / EDIT SALES ORDER LENGKAP */}
-      {isSoModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl border border-rose-100 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-base font-bold text-rose-950 mb-1">{editingSoId ? `Edit SO: ${editingSoId}` : "Buat Sales Order Baru (SO)"}</h3>
-            <p className="text-[11px] text-rose-500 font-mono mb-4">Pengeditan harga dilakukan langsung pada tabel barang di bawah untuk memastikan snapshot tersimpan</p>
-
-            <form onSubmit={handleSaveSalesOrder} className="space-y-4">
-              {/* Box Input & Pencarian Customer */}
-              <div className="bg-rose-50/50 p-3 rounded-xl border border-rose-200 space-y-2">
-                <label className="block text-xs font-bold text-rose-950">Cari Data Customer (Database)</label>
-                <input
-                  type="text"
-                  placeholder="Ketik nama / no telp customer..."
-                  value={customerSearchQuery}
-                  onChange={(e) => setCustomerSearchQuery(e.target.value)}
-                  className="w-full p-2 border border-rose-200 rounded-lg text-xs bg-white outline-none"
-                />
-
-                {filteredCustomers.length > 0 && (
-                  <div className="border border-rose-200 rounded-lg bg-white divide-y divide-rose-100 text-xs">
-                    {filteredCustomers.map((c) => (
-                      <div
-                        key={c.id}
-                        onClick={() => {
-                          setSelectedCustomer(c);
-                          setCustomerSearchQuery("");
-                        }}
-                        className="p-2 hover:bg-rose-100/60 cursor-pointer flex justify-between"
-                      >
-                        <span className="font-bold">{c.customerName} ({c.phone})</span>
-                        <span className="text-[11px] text-slate-500">{c.customerCode}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {selectedCustomer ? (
-                  <div className="p-3 bg-white rounded-lg border border-rose-200 space-y-1 text-xs">
-                    <div>Nama Customer : <b className="text-rose-950">{selectedCustomer.customerName}</b></div>
-                    <div>No Handphone  : <b className="text-rose-950">{selectedCustomer.phone || "-"}</b></div>
-                    <div>Alamat Kirim  : <b className="text-rose-950">{selectedCustomer.displayAddress || selectedCustomer.fullAddress || "-"}</b></div>
-                  </div>
-                ) : (
-                  <div className="text-[11px] text-red-600 font-medium">* Belum ada customer dipilih dari database.</div>
-                )}
-              </div>
-
-              {/* Box Cek Ongkir & Snapshot */}
-              <div className="flex gap-2 items-center">
-                <button
-                  type="button"
-                  disabled={isCalculatingOngkir || !selectedCustomer}
-                  onClick={handleCheckOngkir}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold"
-                >
-                  {isCalculatingOngkir ? "Menghitung..." : "🚚 Cek & Snapshot Ongkir RajaOngkir"}
-                </button>
-                {selectedServiceName && (
-                  <span className="text-xs font-bold text-emerald-700">Terpilih: {selectedServiceName} ({formatRupiah(selectedShippingCost)})</span>
-                )}
-              </div>
-
-              {shippingRatesSnapshot.length > 0 && (
-                <div className="grid grid-cols-3 gap-2">
-                  {shippingRatesSnapshot.map((r, i) => (
-                    <div
-                      key={i}
-                      onClick={() => {
-                        setSelectedShippingCost(r.cost);
-                        setSelectedCourierCode(r.courier);
-                        setSelectedServiceName(r.serviceName);
-                      }}
-                      className={`p-2 rounded-lg border text-xs cursor-pointer ${
-                        selectedServiceName === r.serviceName ? "bg-[#BE185D] text-white border-[#BE185D] font-bold" : "bg-white border-rose-200 text-rose-900"
-                      }`}
-                    >
-                      <div>{r.serviceName}</div>
-                      <div className="text-[11px] mt-1">{formatRupiah(r.cost)}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Tambah Produk SO via Searchbox (Tanpa Dropdown & Tanpa Box Harga SO Tambahan) */}
-              <div className="bg-rose-50/50 p-3 rounded-xl border border-rose-100 space-y-2">
-                <label className="block text-xs font-bold text-rose-900">Cari Produk untuk Ditambahkan</label>
-                <input
-                  type="text"
-                  placeholder="Ketik SKU atau Nama Produk..."
-                  value={productSearchQuery}
-                  onChange={(e) => setProductSearchQuery(e.target.value)}
-                  className="w-full p-2 border border-rose-200 rounded-lg text-xs bg-white outline-none"
-                />
-
-                {filteredSearchProducts.length > 0 && (
-                  <div className="border border-rose-200 rounded-lg bg-white divide-y divide-rose-100 text-xs">
-                    {filteredSearchProducts.map((p) => (
-                      <div
-                        key={p.id}
-                        onClick={() => {
-                          const existingIndex = soItems.findIndex((it) => it.sku === p.sku);
-                          const price = Number(p.netPrice || 0);
-                          if (existingIndex >= 0) {
-                            setSoItems((prev) =>
-                              prev.map((item, idx) =>
-                                idx === existingIndex
-                                  ? { ...item, qty: item.qty + 1, subtotal: (item.qty + 1) * item.price }
-                                  : item
-                              )
-                            );
-                          } else {
-                            setSoItems((prev) => [
-                              ...prev,
-                              {
-                                sku: p.sku,
-                                itemName: p.itemName,
-                                qty: 1,
-                                price: price,
-                                subtotal: price,
-                                weightInGrams: p.weightInGrams || 0,
-                              },
-                            ]);
-                          }
-                          setProductSearchQuery("");
-                        }}
-                        className="p-2 hover:bg-rose-50 cursor-pointer flex justify-between items-center"
-                      >
-                        <div>
-                          <span className="font-bold">{p.itemName}</span>
-                          <span className="text-[10px] text-slate-500 font-mono ml-2">({p.sku})</span>
-                        </div>
-                        <span className="font-bold text-rose-900">{formatRupiah(Number(p.netPrice || 0))}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Tabel Barang SO: Edit Harga & Qty Langsung di Sini */}
-              <div className="max-h-48 overflow-y-auto border border-rose-100 rounded-lg divide-y divide-rose-50 text-xs">
-                {soItems.length === 0 ? (
-                  <div className="p-4 text-center text-slate-400">Belum ada produk ditambahkan ke SO.</div>
-                ) : (
-                  soItems.map((it, idx) => (
-                    <div key={idx} className="p-2.5 flex justify-between items-center gap-2">
-                      <div className="flex-1">
-                        <div className="font-bold">{it.itemName}</div>
-                        <div className="text-[10px] text-slate-500 font-mono">{it.sku}</div>
-                      </div>
-
-                      {/* Input Qty */}
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-slate-500">Qty:</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={it.qty}
-                          onChange={(e) => {
-                            const newQty = Math.max(1, Number(e.target.value));
-                            setSoItems((prev) =>
-                              prev.map((item, i) => (i === idx ? { ...item, qty: newQty, subtotal: newQty * item.price } : item))
-                            );
-                          }}
-                          className="w-14 p-1 border border-rose-200 rounded text-center font-bold"
-                        />
-                      </div>
-
-                      {/* Input Edit Harga */}
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-slate-500">Harga:</span>
-                        <input
-                          type="number"
-                          min="0"
-                          value={it.price}
-                          onChange={(e) => {
-                            const newPrice = Number(e.target.value);
-                            setSoItems((prev) =>
-                              prev.map((item, i) => (i === idx ? { ...item, price: newPrice, subtotal: item.qty * newPrice } : item))
-                            );
-                          }}
-                          className="w-24 p-1 border border-rose-200 rounded text-center font-bold"
-                        />
-                      </div>
-
-                      <div className="w-24 text-right font-bold text-emerald-600">
-                        {formatRupiah(it.subtotal)}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setSoItems(soItems.filter((_, i) => i !== idx))}
-                        className="text-red-600 font-bold px-1.5"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div className="pt-2 border-t border-rose-100 flex justify-between items-center text-xs">
-                <div>
-                  <span>Subtotal Produk: <b>{formatRupiah(soItems.reduce((acc, it) => acc + it.subtotal, 0))}</b></span>
-                  <span className="ml-3">Ongkir: <b>{formatRupiah(selectedShippingCost)}</b></span>
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setIsSoModalOpen(false)} className="px-3 py-1.5 bg-slate-100 rounded text-xs font-bold">Batal</button>
-                  <button type="submit" className="px-4 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded shadow">Simpan Sales Order</button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL GANTI JASA EKSPEDISI DARI SNAPSHOT SAAT STATUS PROCESSING */}
-      {isEditExpeditionModalOpen && targetProcessingSo && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-rose-100">
-            <h3 className="text-base font-bold text-rose-950 mb-1">Ganti Ekspedisi (SO Processing)</h3>
-            <p className="text-xs text-rose-600 font-mono mb-4">SO: {targetProcessingSo.soId} | Pilihan dari snapshot pembuatan SO</p>
-
-            <div className="space-y-2 mb-4">
-              {((targetProcessingSo.shippingRatesSnapshot || []).length > 0 ? targetProcessingSo.shippingRatesSnapshot : shippingRatesSnapshot).map((r: any, idx: number) => (
-                <div
-                  key={idx}
-                  onClick={() => {
-                    setSelectedShippingCost(r.cost);
-                    setSelectedCourierCode(r.courier);
-                    setSelectedServiceName(r.serviceName);
-                  }}
-                  className={`p-3 rounded-lg border text-xs cursor-pointer flex justify-between items-center ${
-                    selectedServiceName === r.serviceName ? "bg-[#BE185D] text-white font-bold" : "bg-white border-rose-200"
-                  }`}
-                >
-                  <div>
-                    <div>{r.serviceName}</div>
-                    <div className="text-[10px] opacity-80">Estimasi: {r.etd || "-"}</div>
-                  </div>
-                  <div className="font-bold">{formatRupiah(r.cost)}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-rose-100">
-              <button type="button" onClick={() => setIsEditExpeditionModalOpen(false)} className="px-3 py-1.5 bg-slate-100 rounded text-xs font-bold">Tutup</button>
-              <button type="button" onClick={handleSaveProcessingExpedition} className="px-4 py-1.5 bg-[#BE185D] text-white rounded text-xs font-bold">Simpan Ekspedisi</button>
             </div>
           </div>
         </div>
@@ -2303,67 +2609,31 @@ Total Tagihan: ${formatRupiah(Number(so.total || 0))}`;
         </div>
       )}
 
-      {/* MODAL FORM RECEIVING DARI PO */}
-      {isReceivingModalOpen && selectedPoForReceiving && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl border border-rose-100">
-            <h3 className="text-base font-bold text-rose-950 mb-1">Penerimaan Barang Fisik (Receiving)</h3>
-            <p className="text-xs text-rose-600 font-mono mb-3">Ref PO: {selectedPoForReceiving.poId}</p>
-            <form onSubmit={(e) => { e.preventDefault(); setReceivingCountdown(10); setIsReceivingConfirmOpen(true); }} className="space-y-3">
-              <div className="max-h-48 overflow-y-auto border border-rose-100 rounded-lg divide-y divide-rose-50">
-                {(selectedPoForReceiving.items || []).map((it: any) => (
-                  <div key={it.sku} className="p-2 flex justify-between items-center text-xs">
-                    <div>
-                      <div className="font-bold">{it.itemName}</div>
-                      <div className="text-[10px] text-slate-500">Dipesan: {it.qty} | Sudah Masuk: {it.receivedQty || 0}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-semibold">Qty Diterima:</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={receivedQtyInputs[it.sku] ?? 0}
-                        onChange={(e) => setReceivedQtyInputs({ ...receivedQtyInputs, [it.sku]: Number(e.target.value) })}
-                        className="w-16 p-1 border border-rose-200 rounded text-xs text-center font-bold"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-rose-900 mb-1">Catatan Penerimaan</label>
-                <input
-                  type="text"
-                  placeholder="misal: Barang diterima lengkap dan baik"
-                  value={receivingNotes}
-                  onChange={(e) => setReceivingNotes(e.target.value)}
-                  className="w-full px-3 py-2 border border-rose-200 rounded-lg text-xs outline-none"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setIsReceivingModalOpen(false)} className="px-3 py-2 bg-slate-100 rounded text-xs font-medium">Batal</button>
-                <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded shadow">Proses Receiving</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* POP-UP KONFIRMASI RECEIVING (COUNTDOWN 10 DETIK) */}
-      {isReceivingConfirmOpen && (
+      {/* MODAL KONFIRMASI LOGOUT */}
+      {isLogoutConfirmOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-emerald-200 text-center">
-            <h3 className="text-base font-bold text-emerald-950 mb-2">Konfirmasi Penerimaan Barang</h3>
-            <p className="text-xs text-emerald-800 mb-6 font-medium">Apakah jumlah barang fisik yang diterima sudah sesuai ?</p>
-            <div className="flex justify-center gap-3">
-              <button type="button" onClick={() => setIsReceivingConfirmOpen(false)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl">Cek Ulang</button>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-rose-100 text-center">
+            <div className="w-12 h-12 bg-rose-100 text-[#9F1239] rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-3">
+              🚪
+            </div>
+            <h3 className="text-base font-bold text-rose-950 mb-1">Konfirmasi Keluar Akun</h3>
+            <p className="text-xs text-rose-700 mb-6 leading-relaxed">
+              Apakah Anda yakin ingin keluar dari sesi <b>{currentUser.name}</b>?
+            </p>
+            <div className="flex gap-2">
               <button
                 type="button"
-                disabled={receivingCountdown > 0}
-                onClick={executeProcessReceiving}
-                className={`px-6 py-2 rounded-xl text-xs font-bold transition text-white ${receivingCountdown > 0 ? "bg-slate-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700 shadow"}`}
+                onClick={() => setIsLogoutConfirmOpen(false)}
+                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
               >
-                {receivingCountdown > 0 ? `Ya, Sesuai (${receivingCountdown}s)` : "Ya, Sudah Sesuai"}
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteLogout}
+                className="flex-1 py-2 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-bold rounded-xl shadow"
+              >
+                Ya, Keluar
               </button>
             </div>
           </div>

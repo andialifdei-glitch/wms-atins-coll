@@ -1,17 +1,27 @@
-login sudah berhasil. sekarang saya ingin report di kelompokkan. berikut pengelompokkannya :
-- Stock
-	- Stock report (ambil dari tab products)
-	- Stock Movement (ambil dari stock adjustment, delivery orders)
-	- Receiving Report (ambil dari tab receivings)
-	- PO aktif (ambil dari tab purchase_orders)
-- Sales
-	- Sales by day (ambil dari delivery_orders/by items)
-	- Sales summary by item (ambil dari delivery_orders/by items)
-	- gunakan filter by date
-- Human
-	- Report Customers
-	- Report Users
+IDENTIFIKASI WEB MENGGUNAKAN BAHASA APA
+PS D:\Atin's Collection\admin-portal> Get-ChildItem -Directory | Where-Object { $_.Name -notin @('node_modules', '.git', 'vendor') } | Select-Object Name; Get-ChildItem -File | Select-Object Name
 
+Name
+----
+.next
+app
+components
+lib
+public
+src
+.env.local
+.gitignore
+AGENTS.md
+eslint.config.mjs
+middleware.ts
+next-env.d.ts
+next.config.ts
+package-lock.json
+package.json
+prompt.txt
+README.md
+tsconfig.json
+wms-atin's-coll (1).zip
 
 untuk judul report jangan Warehose Management System, tapi
 (Jenis Report)
@@ -949,3 +959,43 @@ Subtotal Produk:
 Total Tagihan: 
 
 pada menu buat sales order, gunakan searchbox untuk menambahkan produk. jangan menggunakan dropdown. tidak usah ada box Harga SO. edit Harga bisa dilakukan Ketika barang sudah ditambahkan untuk memastikan snapshot dilakukan. 
+
+pada menu deliveri order, sediakan tombol detail dan tombol untuk cetak label yang berada pada pop-up menu detail. cetak label dengan koneksi printer Bluetooth termal. berikut design label nya :
+DELIVERI ORDER (posisi : center, bold, dan huruf besar sebagai title)
+
+DO : ambil no DO
+Ekspedisi : ambil pilihan jasa kirim
+------
+PENGIRIM
+ambil dari pengaturan
+NO HANDPHONE
+ambil dari pengaturan
+------
+PENERIMA
+ambil dari data
+ALAMAT
+ambil dari data
+NO HANDPHONE
+ambil dari data
+-------
+SO : ambil data no SO
+tanggal cetak : ambil dari time stamp
+by :
+
+pada menu pengaturan toko, sediakan juga pengaturan printer Bluetooth. pengaturan ukuran kertas terdiri dari 58mm, 80mm, 100mm. gunakan konfigurasi Bluetooth untuk koneksi nya.
+
+menu stock opname tidak bisa membuat initialize SOP. buatkan tombol initialize stock opname berikut fungsi nya. samakan fungsi nya dengan yang ada pada android apps. untuk stock opname, berikut kriteria nya :
+- stock opname general : semua item dilakukan stock opname
+- stock opname parsial : beberapa item saja yang disertakan untuk stock opname. berikan pilihan mau item atau family. jika memilih family pun, item diluar family itu bisa disertakan.
+berikan alert untuk mengkonfirmasi stock opname. 
+
+pada menu produk dan stock, tambahkan tombol edit pada untuk merubah parameter produk. tampilkan SKU dan family yang disable (tidak dapat di ubah).
+item yang dapat di edit/ubah : 
+- nama produk
+- Harga beli
+- Harga jual
+- status
+
+bisa kamu pecah modul/modal dan function yang ada menjadi beberapa file untuk memudahkan proses debugging ? aku rasa ini sudah terlalu banyak modul/modal dan function yang ada. jika bisa, pecah dalam beberapa file. pecah file secara proporsional sesuai stadar industry lalu lakukan kofigurasi ulang sehingga semua modul dan function bisa berjalan normal
+
+pada menu purchase order dan receiving, buatkan menu untuk create PO dengan bussiness logic yang sama dengan android apps. namun untuk input qty bisa disesuaikan dengan kebutuhan. buatkan juga sub menu receiving untuk proses penerimaan barang. jika barang yang diinput pada receiving kurang maka barang dapat diterima dan PO dinyatakan selesai. jika lebih maka PO tidak dapat diterima dan harus di cek kembali. berikan alert beserta qty yang telah di input untuk konfirmasi. buatkan juga pada modul terpisah untuk memudahkan jika ada bug.
