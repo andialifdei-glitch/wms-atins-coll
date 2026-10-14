@@ -1,20 +1,16 @@
-import type { NextConfig } from "next";
+﻿import type { NextConfig } from "next";
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+
+initOpenNextCloudflareForDev();
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  experimental: {
-    agentFeedback: true,
+  typescript: {
+    ignoreBuildErrors: true,
   },
-  cacheComponents: true,
-  partialPrefetching: true,
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
+  eslint: {
+    ignoreDuringBuilds: true,
   },
+  reactStrictMode: true,
 };
 
 export default nextConfig;

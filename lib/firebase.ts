@@ -1,20 +1,34 @@
-﻿import { initializeApp, getApps, getApp } from "firebase/app";
-import { initializeFirestore } from "firebase/firestore";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore, Firestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyB04dGkGOXRV8gCOlrWoPKaPm8pUHxmS9w",
+  authDomain: "gen-lang-client-0158803339.firebaseapp.com",
+  projectId: "gen-lang-client-0158803339",
+  storageBucket: "gen-lang-client-0158803339.appspot.com",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || ""
 };
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Menghubungkan langsung ke nama database WMS Atins
-export const db = initializeFirestore(app, { experimentalForceLongPolling: true }, "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f");
-export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
+let _dbInstance: Firestore | null = null;
 
+function getDb(): Firestore {
+  if (!_dbInstance) {
+    _dbInstance = getFirestore(app, "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f");
+  }
+  return _dbInstance;
+}
+
+// Proxy aman: mencegah error getImmediate saat modul pertama kali di-import
+export const db: any = new Proxy({}, {
+  get(_, prop) {
+    if (typeof window === "undefined") {
+      return () => ({});
+    }
+    const target = getDb();
+    const val = (target as any)[prop];
+    return typeof val === "function" ? val.bind(target) : val;
+  }
+});

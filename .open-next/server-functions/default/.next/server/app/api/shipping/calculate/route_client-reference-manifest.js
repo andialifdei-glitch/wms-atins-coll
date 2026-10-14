@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/shipping/calculate/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"D:\\Atins-Collection\\admin-portal\\app\\api\\shipping\\calculate\\route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};

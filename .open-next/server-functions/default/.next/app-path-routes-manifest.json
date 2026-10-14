@@ -1,0 +1,12 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/_global-error/page": "/_global-error",
+  "/api/logout/route": "/api/logout",
+  "/api/regions/route": "/api/regions",
+  "/favicon.ico/route": "/favicon.ico",
+  "/api/portal/data/route": "/api/portal/data",
+  "/api/login/route": "/api/login",
+  "/api/shipping/calculate/route": "/api/shipping/calculate",
+  "/login/page": "/login",
+  "/page": "/"
+}

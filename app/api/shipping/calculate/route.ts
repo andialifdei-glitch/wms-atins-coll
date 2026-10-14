@@ -1,9 +1,11 @@
-﻿import { NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+export const dynamic = "force-dynamic";
+
+import { NextResponse } from "next/server";
 
 const BASE_URL = "https://rajaongkir.komerce.id/api/v1";
 const DEFAULT_FALLBACK_KEY = "KYr1MRBPb4a4667b8ed8a865DPqsFp5n";
+const PROJECT_ID = "gen-lang-client-0158803339";
+const DATABASE_ID = "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f";
 
 // In-Memory Cache
 const cacheRates = new Map<string, { data: any; timestamp: number }>();
@@ -12,13 +14,23 @@ const CACHE_RATES_TTL = 30 * 60 * 1000;
 const CACHE_DEST_TTL = 24 * 60 * 60 * 1000;
 
 async function getActiveApiKey(): Promise<string> {
+  const apiKey =
+    process.env.NEXT_PUBLIC_FIREBASE_API_KEY ||
+    process.env.FIREBASE_API_KEY ||
+    "";
+
+  if (!apiKey) return DEFAULT_FALLBACK_KEY;
+
   try {
-    const storeSnap = await getDoc(doc(db, "settings", "store_info"));
-    if (storeSnap.exists() && storeSnap.data()?.rajaOngkirApiKey) {
-      return storeSnap.data().rajaOngkirApiKey;
+    const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/settings/store_info?key=${apiKey}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      const val = data?.fields?.rajaOngkirApiKey?.stringValue;
+      if (val) return val;
     }
   } catch (err) {
-    console.error("Gagal baca key:", err);
+    console.error("Gagal baca rajaOngkirApiKey via REST:", err);
   }
   return DEFAULT_FALLBACK_KEY;
 }

@@ -1,0 +1,36 @@
+{
+  "name": "admin-portal",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "check-types": "tsc --noEmit",
+    "build:worker": "npx @opennextjs/cloudflare build && node patch-opennext.js",
+    "preview": "npx @opennextjs/cloudflare build && npx wrangler dev",
+    "deploy": "npx @opennextjs/cloudflare build && npx @opennextjs/cloudflare deploy",
+    "dev:worker": "npm run build:worker && npx wrangler dev",
+    "deploy:worker": "npm run build:worker && npx @opennextjs/cloudflare deploy"
+  },
+  "dependencies": {
+    "firebase": "^11.0.0",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
+    "next": "16.4.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.11",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.30",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5",
+    "wrangler": "^4.150.0"
+  }
+}
