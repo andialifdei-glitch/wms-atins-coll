@@ -1,4 +1,3 @@
-"use client";
 ﻿"use client";
 
 import React, { useEffect, useState, useMemo } from "react";
@@ -17,6 +16,7 @@ import {
 import { useRouter } from "next/navigation";
 import { formatRupiah, buildWhatsAppMessage } from "@/lib/formatters";
 import ProductModal from "@/components/modals/ProductModal";
+import SupplierModal from "@/components/modals/SupplierModal";
 import StockAdjustmentModal from "@/components/modals/StockAdjustmentModal";
 import StockOpnameModal from "@/components/modals/StockOpnameModal";
 import SalesOrderModal from "@/components/modals/SalesOrderModal";
@@ -34,41 +34,6 @@ interface RegionItem {
 }
 
 export default function Page() {
-
-  const fetchDirectPortalData = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/portal/data");
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) {
-          const d = json.data;
-          if (Array.isArray(d.products)) setProducts(d.products);
-          if (Array.isArray(d.families)) setFamilies(d.families);
-          if (Array.isArray(d.customers)) setCustomers(d.customers);
-          if (Array.isArray(d.salesOrders)) setSalesOrders(d.salesOrders);
-          if (Array.isArray(d.deliveryOrders)) setDeliveryOrders(d.deliveryOrders);
-          if (Array.isArray(d.purchaseOrders)) setPurchaseOrders(d.purchaseOrders);
-          if (Array.isArray(d.receivings)) setReceivings(d.receivings);
-          if (Array.isArray(d.stockOpnames)) setStockOpnames(d.stockOpnames);
-          if (Array.isArray(d.stockAdjustments)) setStockAdjustments(d.stockAdjustments);
-          if (Array.isArray(d.stockMovements)) setStockMovements(d.stockMovements);
-          if (Array.isArray(d.users)) setUsersList(d.users);
-          const found = (d.settings || []).find((s: any) => s.id === "store_info");
-          if (found) setStoreSettings((prev: any) => ({ ...prev, ...found }));
-        }
-      }
-    } catch (e) {
-      console.error("Gagal load portal data:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchDirectPortalData();
-  }, []);
-
   const [currentTab, setCurrentTab] = useState<MainTab>("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [salesSubTab, setSalesSubTab] = useState<"so" | "do">("so");
@@ -88,8 +53,16 @@ export default function Page() {
   const [stockAdjustments, setStockAdjustments] = useState<any[]>([]);
   const [stockMovements, setStockMovements] = useState<any[]>([]);
   const [usersList, setUsersList] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [soSearchQuery, setSoSearchQuery] = useState("");
+  const [productSearchQuery, setProductSearchQuery] = useState("");
+  const [userSubTab, setUserSubTab] = useState<"staff" | "suppliers">("staff");
+  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<any | null>(null);
+  const [isDeactivateSkuModalOpen, setIsDeactivateSkuModalOpen] = useState(false);
+  const [isReactivateSkuModalOpen, setIsReactivateSkuModalOpen] = useState(false);
+  const [skuActionLoading, setSkuActionLoading] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
-  const [search, setSearch] = useState<string>("");
 
   // Store Settings
   const [storeSettings, setStoreSettings] = useState({
@@ -210,6 +183,28 @@ export default function Page() {
     setAlertModal({ isOpen: true, title, message });
   };
 
+  const handleOpenNewReceiving = () => {
+    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk melakukan receiving!", "Akses Ditolak");
+    const validPos = purchaseOrders.filter((po) => {
+      const st = String(po.status || "").toUpperCase();
+      if (st !== "OPEN" && st !== "PARTIAL") return false;
+      return (po.items || []).some((it: any) => {
+        const remaining = Math.max(0, Number(it.qty || 0) - Number(it.receivedQty || 0));
+        return remaining > 0;
+      });
+    });
+
+    if (validPos.length === 0) {
+      return showAlert(
+        "Tidak ada Purchase Order (PO) aktif (OPEN / PARTIAL) yang dapat diproses penerimaannya.",
+        "PO Tidak Tersedia"
+      );
+    }
+
+    setSelectedPoForReceiving(validPos[0]);
+    setIsReceivingModalOpen(true);
+  };
+
   function handleNavigateFromNotification(docType: string, docId: string) {
     switch (docType) {
       case "SO":
@@ -280,7 +275,6 @@ export default function Page() {
   async function loadAllData() {
     setLoading(true);
     try {
-      // Prioritaskan REST API internal portal yang aman dan langsung terisi
       const apiRes = await fetch("/api/portal/data");
       if (apiRes.ok) {
         const json = await apiRes.json();
@@ -297,7 +291,8 @@ export default function Page() {
           setStockAdjustments(d.stockAdjustments || []);
           setStockMovements(d.stockMovements || []);
           setUsersList(d.users || []);
-          
+          setSuppliers(d.suppliers || []);
+
           const foundSettings = (d.settings || []).find((s: any) => s.id === "store_info");
           if (foundSettings) {
             setStoreSettings((prev: any) => ({ ...prev, ...foundSettings }));
@@ -309,9 +304,9 @@ export default function Page() {
           return;
         }
       }
-      // Fallback ke SDK langsung jika API tidak merespons:
+
       const [
-        pSnap, fSnap, cSnap, soSnap, doSnap, poSnap, rcvSnap, sopSnap, adjSnap, mvSnap, setDocSnap, uSnap
+        pSnap, fSnap, cSnap, soSnap, doSnap, poSnap, rcvSnap, sopSnap, adjSnap, mvSnap, setDocSnap, uSnap, suppSnap
       ] = await Promise.all([
         getDocs(query(collection(db, "products"), limit(500))),
         getDocs(query(collection(db, "families"), limit(100))),
@@ -325,6 +320,7 @@ export default function Page() {
         getDocs(query(collection(db, "stock_movements"), limit(300))),
         getDocs(query(collection(db, "settings"), limit(1))),
         getDocs(query(collection(db, "users"), limit(100))),
+        getDocs(query(collection(db, "suppliers"), limit(200))),
       ]);
 
       setProducts(pSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
@@ -338,6 +334,9 @@ export default function Page() {
       setStockAdjustments(adjSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setStockMovements(mvSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setUsersList(uSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      if (suppSnap) {
+        setSuppliers(suppSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }
 
       const foundSettings = setDocSnap.docs.find((d) => d.id === "store_info");
       if (foundSettings) {
@@ -595,6 +594,146 @@ export default function Page() {
     }
   }
 
+  async function handleSaveSupplier(formData: any) {
+    if (!isRootAdmin) return showAlert("Hanya ROOT_ADMIN yang berhak mengelola supplier!", "Akses Ditolak");
+    try {
+      setLoading(true);
+      if (editingSupplier && editingSupplier.supplierId) {
+        await updateDoc(doc(db, "suppliers", editingSupplier.supplierId), {
+          supplierName: formData.supplierName.trim(),
+          phone: formData.phone.trim(),
+          address: formData.address.trim(),
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.name,
+        });
+        showAlert(`Supplier [${editingSupplier.supplierId}] berhasil diperbarui!`, "Sukses");
+      } else {
+        const counterRef = doc(db, "counters", "supplier");
+        const newSuppId = await runTransaction(db, async (tx) => {
+          const cSnap = await tx.get(counterRef);
+          const curr = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
+          const next = curr + 1;
+          const generatedId = `SUPP-${String(next).padStart(4, "0")}`;
+          tx.set(counterRef, { currentNumber: next, updatedAt: serverTimestamp() }, { merge: true });
+          tx.set(doc(db, "suppliers", generatedId), {
+            supplierId: generatedId,
+            documentNo: generatedId,
+            supplierName: formData.supplierName.trim(),
+            phone: formData.phone.trim(),
+            address: formData.address.trim(),
+            active: true,
+            createdAt: serverTimestamp(),
+            createdBy: currentUser.name,
+            updatedAt: serverTimestamp(),
+          });
+          return generatedId;
+        });
+        showAlert(`Supplier baru [${newSuppId}] berhasil ditambahkan!`, "Sukses");
+      }
+      setIsSupplierModalOpen(false);
+      setEditingSupplier(null);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menyimpan data supplier.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteSupplier(supp: any) {
+    if (!isRootAdmin) return showAlert("Hanya ROOT_ADMIN yang berhak menghapus supplier!", "Akses Ditolak");
+    if (!confirm(`Hapus data supplier ${supp.supplierName} (${supp.supplierId})?`)) return;
+    try {
+      setLoading(true);
+      await updateDoc(doc(db, "suppliers", supp.supplierId), {
+        active: false,
+        deletedAt: serverTimestamp(),
+        deletedBy: currentUser.name,
+      });
+      showAlert(`Supplier [${supp.supplierId}] dinonaktifkan.`, "Sukses");
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menghapus supplier.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleExecuteMassDeactivateSku() {
+    if (!isRootAdmin) return showAlert("Hanya ROOT_ADMIN yang berhak menonaktifkan massal SKU!", "Akses Ditolak");
+    try {
+      setSkuActionLoading(true);
+      const activeProducts = products.filter((p) => p.active !== false);
+      if (activeProducts.length === 0) {
+        setIsDeactivateSkuModalOpen(false);
+        return showAlert("Tidak ada SKU aktif yang perlu dinonaktifkan.");
+      }
+
+      const todayStr = new Date().toISOString().replace(/[:.]/g, "-");
+      const backupId = `SKU_BACKUP_${todayStr}`;
+      const backupData = activeProducts.map((p) => ({
+        sku: p.sku,
+        active: p.active !== false,
+        supplierId: p.supplierId || null,
+      }));
+
+      await setDoc(doc(db, "sku_status_backups", backupId), {
+        backupId: backupId,
+        createdAt: serverTimestamp(),
+        createdBy: currentUser.name,
+        totalSkus: backupData.length,
+        items: backupData,
+      });
+
+      for (const p of activeProducts) {
+        await updateDoc(doc(db, "products", p.sku), {
+          active: false,
+          status: "INACTIVE",
+          deactivatedAt: serverTimestamp(),
+          deactivatedBy: currentUser.name,
+          backupRef: backupId,
+        });
+      }
+
+      setIsDeactivateSkuModalOpen(false);
+      showAlert(`${activeProducts.length} SKU berhasil dinonaktifkan. Backup disimpan dengan ID: ${backupId}`, "Sukses");
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menonaktifkan SKU massal.");
+    } finally {
+      setSkuActionLoading(false);
+    }
+  }
+
+  async function handleExecuteMassReactivateSku() {
+    if (!isRootAdmin) return showAlert("Hanya ROOT_ADMIN yang berhak mengaktifkan SKU!", "Akses Ditolak");
+    try {
+      setSkuActionLoading(true);
+      const eligibleProducts = products.filter((p) => p.active === false && p.supplierId);
+      if (eligibleProducts.length === 0) {
+        setIsReactivateSkuModalOpen(false);
+        return showAlert("Tidak ada SKU nonaktif yang memiliki relasi Supplier.");
+      }
+
+      for (const p of eligibleProducts) {
+        await updateDoc(doc(db, "products", p.sku), {
+          active: true,
+          status: "ACTIVE",
+          reactivatedAt: serverTimestamp(),
+          reactivatedBy: currentUser.name,
+        });
+      }
+
+      setIsReactivateSkuModalOpen(false);
+      showAlert(`${eligibleProducts.length} SKU dengan supplier terdaftar berhasil diaktifkan kembali!`, "Sukses");
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal mengaktifkan kembali SKU.");
+    } finally {
+      setSkuActionLoading(false);
+    }
+  }
+
   async function handleSaveProduct(savedData: any) {
     try {
       setLoading(true);
@@ -602,6 +741,8 @@ export default function Page() {
         if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak mengedit produk.");
         await updateDoc(doc(db, "products", savedData.sku), {
           itemName: savedData.itemName.trim(),
+          supplierId: savedData.supplierId || "",
+          supplierName: savedData.supplierName || "",
           purchasingPrice: Number(savedData.purchasingPrice),
           netPrice: Number(savedData.netPrice),
           active: Boolean(savedData.active),
@@ -628,6 +769,8 @@ export default function Page() {
             sku: candidateSku,
             familyCode: famCode,
             itemName: savedData.itemName.trim(),
+            supplierId: savedData.supplierId || "",
+            supplierName: savedData.supplierName || "",
             lastReceiving: "-",
             stock: initStock,
             purchasingPrice: Number(savedData.purchasingPrice),
@@ -1180,8 +1323,8 @@ export default function Page() {
       setLoading(true);
       const { po, receivedMap, notes } = payload;
       const today = new Date();
+      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
       const displayDate = today.toISOString().split("T")[0];
-      const rcvRef = doc(collection(db, "receivings"));
 
       await runTransaction(db, async (tx) => {
         const poRef = doc(db, "purchase_orders", po.poId || po.id);
@@ -1189,9 +1332,21 @@ export default function Page() {
         if (!poSnap.exists()) throw new Error("Dokumen PO tidak ditemukan!");
         const currentPo = poSnap.data();
 
+        const counterRef = doc(db, "counters", `rcv_counter_${dateStr}`);
+        const cSnap = await tx.get(counterRef);
+        const curr = cSnap.exists() ? (cSnap.data().current || 0) : 0;
+        const next = curr + 1;
+        const generatedRcvId = `RCV-${dateStr}-${String(next).padStart(4, "0")}`;
+        tx.set(counterRef, { current: next, date: dateStr, updatedAt: serverTimestamp() });
+
         const receivedList: any[] = [];
+        let allItemsFullyReceived = true;
+
         const updatedPoItems = (currentPo.items || []).map((it: any) => {
           const qtyIn = Number(receivedMap[it.sku] || 0);
+          const currentReceived = Number(it.receivedQty || 0);
+          const newReceivedTotal = currentReceived + qtyIn;
+
           if (qtyIn > 0) {
             receivedList.push({
               sku: it.sku,
@@ -1219,32 +1374,39 @@ export default function Page() {
               itemCode: it.sku,
               itemNameSnapshot: it.itemName,
               type: "RECEIVING",
-              referenceId: po.poId,
+              referenceId: generatedRcvId,
               qtyIn: qtyIn,
               qtyOut: 0,
               previousStock: currentStock,
               newStock: newStock,
-              reason: `Penerimaan Barang PO ${po.poId}`,
+              reason: `Penerimaan Barang RCV ${generatedRcvId} (PO: ${po.poId})`,
               user: currentUser.name,
               timestamp: serverTimestamp(),
             });
-
-            return { ...it, receivedQty: (it.receivedQty || 0) + qtyIn };
           }
-          return it;
+
+          if (newReceivedTotal < Number(it.qty || 0)) {
+            allItemsFullyReceived = false;
+          }
+
+          return { ...it, receivedQty: newReceivedTotal };
         });
+
+        const newPoStatus = allItemsFullyReceived ? "COMPLETED" : "PARTIAL";
 
         tx.update(poRef, {
           items: updatedPoItems,
-          status: "COMPLETED",
-          completedAt: serverTimestamp(),
+          status: newPoStatus,
+          ...(allItemsFullyReceived ? { completedAt: serverTimestamp() } : {}),
           updatedAt: serverTimestamp(),
           updatedBy: currentUser.name,
         });
 
-        tx.set(rcvRef, {
-          receivingId: rcvRef.id,
-          poId: po.poId,
+        const rcvDocRef = doc(db, "receivings", generatedRcvId);
+        tx.set(rcvDocRef, {
+          receivingId: generatedRcvId,
+          documentNo: generatedRcvId,
+          poId: po.poId || po.documentNo,
           date: displayDate,
           supplier: po.supplier || "-",
           items: receivedList,
@@ -1264,7 +1426,7 @@ export default function Page() {
         actorId: currentUser.id,
         actorName: currentUser.name,
       });
-      showAlert(`Barang berhasil diterima dan Purchase Order [${payload.po.poId}] dinyatakan SELESAI (COMPLETED)!`, "Sukses");
+      showAlert(`Barang berhasil diterima dan dicatat dalam riwayat receiving!`, "Sukses");
       loadAllData();
     } catch (err: any) {
       showAlert(err.message || "Gagal memproses penerimaan barang.");
@@ -1341,9 +1503,29 @@ export default function Page() {
   }
 
   const displayedSalesOrders = useMemo(() => {
-    if (soStatusFilter === "ALL") return salesOrders;
-    return salesOrders.filter((s) => s.status === soStatusFilter);
-  }, [salesOrders, soStatusFilter]);
+    return salesOrders.filter((so) => {
+      const matchesStatus = soStatusFilter === "ALL" || (so.status || "").toUpperCase() === soStatusFilter;
+      if (!matchesStatus) return false;
+
+      if (!soSearchQuery.trim()) return true;
+      const q = soSearchQuery.toLowerCase();
+      const name = String(so.customerName || so.customer?.name || so.customer?.fullName || "").toLowerCase();
+      const addr = String(so.shippingAddress || so.address || so.customer?.address || "").toLowerCase();
+      const soNo = String(so.soNumber || so.documentNo || so.id || "").toLowerCase();
+      return name.includes(q) || addr.includes(q) || soNo.includes(q);
+    });
+  }, [salesOrders, soStatusFilter, soSearchQuery]);
+
+  const filteredProducts = useMemo(() => {
+    if (!productSearchQuery.trim()) return products;
+    const q = productSearchQuery.toLowerCase();
+    return products.filter((p) => {
+      const sku = String(p.sku || "").toLowerCase();
+      const name = String(p.itemName || "").toLowerCase();
+      const fam = String(p.familyCode || "").toLowerCase();
+      return sku.includes(q) || name.includes(q) || fam.includes(q);
+    });
+  }, [products, productSearchQuery]);
 
   const filteredLedgerProducts = useMemo(() => {
     return products.filter((p) => {
@@ -1359,25 +1541,22 @@ export default function Page() {
 
   return (
     <div className="flex h-screen bg-[#FFF5F6] font-sans text-rose-950">
-      
-{isMobileMenuOpen && (
-  <button
-    type="button"
-    aria-label="Tutup menu navigasi"
-    className="fixed inset-0 z-40 bg-black/40 md:hidden"
-    onClick={() => setIsMobileMenuOpen(false)}
-  />
-)}
+      {isMobileMenuOpen && (
+        <button
+          type="button"
+          aria-label="Tutup menu navigasi"
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
 
       {/* SIDEBAR */}
-      
-<aside className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-[#6E354F] bg-[#4A2033] text-rose-100 shadow-2xl transition-transform duration-200 md:relative md:inset-auto md:z-auto md:translate-x-0 md:shrink-0 ${
-  isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-}`}>
-
+      <aside className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-[#6E354F] bg-[#4A2033] text-rose-100 shadow-2xl transition-transform duration-200 md:relative md:inset-auto md:z-auto md:translate-x-0 md:shrink-0 ${
+        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+      }`}>
         <div className="p-5 border-b border-[#6E354F]">
           <div className="flex items-center gap-2">
-            <span className="text-xl">🧥</span>
+            <span className="text-xl">🧕</span>
             <h1 className="text-base font-bold text-white tracking-wide">WMS Atin&apos;s Coll</h1>
           </div>
           <p className="text-[11px] text-rose-300 mt-0.5">Warehouse Management System</p>
@@ -1404,12 +1583,10 @@ export default function Page() {
             <button
               key={item.key}
               type="button"
-              
-onClick={() => {
-  setCurrentTab(item.key as MainTab);
-  setIsMobileMenuOpen(false);
-}}
-onClick={() => setCurrentTab(item.key as MainTab)}
+              onClick={() => {
+                setCurrentTab(item.key as MainTab);
+                setIsMobileMenuOpen(false);
+              }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition ${
                 currentTab === item.key ? "bg-[#BE185D] text-white shadow" : "text-rose-200 hover:bg-[#5C2B42]"
               }`}
@@ -1433,15 +1610,14 @@ onClick={() => setCurrentTab(item.key as MainTab)}
       {/* WORKSPACE */}
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="flex items-center justify-between gap-3 border-b border-rose-100 bg-white px-4 py-3 shadow-xs sm:px-6 md:px-8 md:py-4">
-          
-<button
-  type="button"
-  onClick={() => setIsMobileMenuOpen(true)}
-  className="shrink-0 rounded-lg border border-rose-200 px-3 py-2 text-sm text-rose-900 md:hidden"
-  aria-label="Buka menu navigasi"
->
-  ☰
-</button>
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="shrink-0 rounded-lg border border-rose-200 px-3 py-2 text-sm text-rose-900 md:hidden"
+            aria-label="Buka menu navigasi"
+          >
+            ☰
+          </button>
 
           <div>
             <h2 className="text-lg font-bold text-rose-950 uppercase">
@@ -1547,24 +1723,35 @@ onClick={() => setCurrentTab(item.key as MainTab)}
 
               {salesSubTab === "so" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-rose-950">Menampilkan {displayedSalesOrders.length} Sales Order</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingSoId(null);
-                        setSoModalInitCustomer(null);
-                        setSoModalInitItems([]);
-                        setSoModalInitRates([]);
-                        setSoModalInitCost(0);
-                        setSoModalInitCourier("");
-                        setSoModalInitService("");
-                        setIsSoModalOpen(true);
-                      }}
-                      className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
-                    >
-                      + Buat Sales Order (SO) Baru
-                    </button>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <span className="text-xs font-bold text-rose-950">
+                      Menampilkan {displayedSalesOrders.length} Sales Order
+                    </span>
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <input
+                        type="text"
+                        placeholder="Cari SO (Nama Pemesan / Alamat)..."
+                        value={soSearchQuery}
+                        onChange={(e) => setSoSearchQuery(e.target.value)}
+                        className="p-1.5 px-3 border border-rose-200 rounded-lg text-xs outline-none w-full sm:w-64 bg-rose-50/40 focus:bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingSoId(null);
+                          setSoModalInitCustomer(null);
+                          setSoModalInitItems([]);
+                          setSoModalInitRates([]);
+                          setSoModalInitCost(0);
+                          setSoModalInitCourier("");
+                          setSoModalInitService("");
+                          setIsSoModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow whitespace-nowrap"
+                      >
+                        + Buat Sales Order (SO) Baru
+                      </button>
+                    </div>
                   </div>
 
                   <div className="overflow-x-auto text-xs">
@@ -1574,7 +1761,7 @@ onClick={() => setCurrentTab(item.key as MainTab)}
                           <th className="p-2.5">No SO</th>
                           <th className="p-2.5">Tanggal</th>
                           <th className="p-2.5">Customer & Alamat</th>
-                          <th className="p-2.5">Item Barang</th>
+                          <th className="p-2.5">Total Kuantitas</th>
                           <th className="p-2.5">Ekspedisi & Ongkir</th>
                           <th className="p-2.5">Total Bayar</th>
                           <th className="p-2.5">Status</th>
@@ -1591,11 +1778,9 @@ onClick={() => setCurrentTab(item.key as MainTab)}
                               <div className="text-[10px] text-slate-500 max-w-xs truncate">{so.address}</div>
                             </td>
                             <td className="p-2.5">
-                              {(so.items || []).map((it: any, i: number) => (
-                                <div key={i} className="text-[11px]">
-                                  • {it.itemName} ({it.qty}x @{formatRupiah(it.price)})
-                                </div>
-                              ))}
+                              <div className="text-slate-700 font-semibold">
+                                {(so.items || []).reduce((acc: number, it: any) => acc + (Number(it.qty || it.quantity) || 0), 0)} pcs total ({(so.items || []).length} SKU)
+                              </div>
                             </td>
                             <td className="p-2.5">
                               <div>{so.shippingServiceName || so.expedition || "-"}</div>
@@ -1764,33 +1949,42 @@ onClick={() => setCurrentTab(item.key as MainTab)}
               {/* 3.1 PRODUK & STOK */}
               {invSubTab === "products" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <div>
                       <span className="text-xs font-bold text-rose-950 uppercase">Master Produk & Stok Gudang</span>
                       <p className="text-[11px] text-slate-500">Klik tombol Edit untuk memperbarui parameter produk</p>
                     </div>
-                    {isRootAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsEditingProduct(false);
-                          setProductFormData({
-                            sku: "",
-                            itemName: "",
-                            familyCode: families[0]?.familyCode || "",
-                            weightInGrams: 0,
-                            active: true,
-                            purchasingPrice: 0,
-                            netPrice: 0,
-                            initialStock: 0,
-                          });
-                          setIsProductModalOpen(true);
-                        }}
-                        className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
-                      >
-                        + Tambah Produk Baru
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <input
+                        type="text"
+                        placeholder="Cari Produk (SKU / Nama / Family)..."
+                        value={productSearchQuery}
+                        onChange={(e) => setProductSearchQuery(e.target.value)}
+                        className="p-1.5 px-3 border border-rose-200 rounded-lg text-xs outline-none w-full sm:w-64 bg-rose-50/40 focus:bg-white"
+                      />
+                      {isRootAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsEditingProduct(false);
+                            setProductFormData({
+                              sku: "",
+                              itemName: "",
+                              familyCode: families[0]?.familyCode || "",
+                              weightInGrams: 0,
+                              active: true,
+                              purchasingPrice: 0,
+                              netPrice: 0,
+                              initialStock: 0,
+                            });
+                            setIsProductModalOpen(true);
+                          }}
+                          className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow whitespace-nowrap"
+                        >
+                          + Tambah Produk Baru
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="overflow-x-auto text-xs">
@@ -1808,53 +2002,50 @@ onClick={() => setCurrentTab(item.key as MainTab)}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-rose-50">
-                        {products
-                          .filter((p) => {
-                            if (!search.trim()) return true;
-                            const q = search.toLowerCase();
-                            return (
-                              (p.sku || "").toLowerCase().includes(q) ||
-                              (p.itemName || "").toLowerCase().includes(q) ||
-                              (p.familyCode || "").toLowerCase().includes(q)
-                            );
-                          })
-                          .map((p) => (
-                            <tr key={p.id} className="hover:bg-rose-50/40 transition">
-                              <td className="p-2.5 font-mono font-bold text-rose-900 whitespace-nowrap">{p.sku}</td>
-                              <td className="p-2.5 font-mono text-slate-600 whitespace-nowrap">{p.familyCode || "-"}</td>
-                              <td className="p-2.5 font-semibold text-rose-950">{p.itemName}</td>
-                              <td className="p-2.5 font-bold text-emerald-600 whitespace-nowrap">{p.stock || 0} pcs</td>
-                              <td className="p-2.5 whitespace-nowrap">{formatRupiah(Number(p.purchasingPrice || 0))}</td>
-                              <td className="p-2.5 whitespace-nowrap font-bold text-rose-900">{formatRupiah(Number(p.netPrice || 0))}</td>
-                              <td className="p-2.5 whitespace-nowrap">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.active ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
-                                  {p.active ? "Aktif" : "Nonaktif"}
-                                </span>
-                              </td>
-                              <td className="p-2.5 text-right whitespace-nowrap">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setIsEditingProduct(true);
-                                    setProductFormData({
-                                      sku: p.sku,
-                                      itemName: p.itemName,
-                                      familyCode: p.familyCode || "",
-                                      weightInGrams: p.weightInGrams || 0,
-                                      active: p.active !== false,
-                                      purchasingPrice: p.purchasingPrice || 0,
-                                      netPrice: p.netPrice || 0,
-                                      initialStock: p.stock || 0,
-                                    });
-                                    setIsProductModalOpen(true);
-                                  }}
-                                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold shadow-xs"
-                                >
-                                  ✏️ Edit
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                        {filteredProducts.map((p) => (
+                          <tr key={p.id} className="hover:bg-rose-50/40 transition">
+                            <td className="p-2.5 font-mono font-bold text-rose-900 whitespace-nowrap">{p.sku}</td>
+                            <td className="p-2.5 font-mono text-slate-600 whitespace-nowrap">{p.familyCode || "-"}</td>
+                            <td className="p-2.5 font-semibold text-rose-950">{p.itemName}</td>
+                            <td className="p-2.5 font-bold text-emerald-600 whitespace-nowrap">{p.stock || 0} pcs</td>
+                            <td className="p-2.5 whitespace-nowrap">{formatRupiah(Number(p.purchasingPrice || 0))}</td>
+                            <td className="p-2.5 whitespace-nowrap font-bold text-rose-900">{formatRupiah(Number(p.netPrice || 0))}</td>
+                            <td className="p-2.5 whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.active ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+                                {p.active ? "Aktif" : "Nonaktif"}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsEditingProduct(true);
+                                  setProductFormData({
+                                    sku: p.sku,
+                                    itemName: p.itemName,
+                                    familyCode: p.familyCode || "",
+                                    weightInGrams: p.weightInGrams || 0,
+                                    active: p.active !== false,
+                                    purchasingPrice: p.purchasingPrice || 0,
+                                    netPrice: p.netPrice || 0,
+                                    initialStock: p.stock || 0,
+                                  });
+                                  setIsProductModalOpen(true);
+                                }}
+                                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold shadow-xs"
+                              >
+                                ✏️ Edit
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {filteredProducts.length === 0 && (
+                          <tr>
+                            <td colSpan={8} className="p-5 text-center text-slate-400">
+                              Tidak ada produk yang cocok dengan pencarian.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -2086,7 +2277,7 @@ onClick={() => setCurrentTab(item.key as MainTab)}
             </div>
           )}
 
-          {/* TAB 4: PURCHASE ORDER & SUB-MENU RECEIVING */}
+          {/* TAB 4: PURCHASE ORDER & RECEIVING */}
           {currentTab === "purchase" && (
             <div className="space-y-4">
               <div className="flex gap-2 border-b border-rose-200 pb-2">
@@ -2106,7 +2297,7 @@ onClick={() => setCurrentTab(item.key as MainTab)}
                     poSubTab === "receiving_list" ? "bg-[#BE185D] text-white shadow" : "bg-white text-rose-900 border border-rose-200"
                   }`}
                 >
-                  Sub-Menu Receiving Masuk ({receivings.length})
+                  Receiving ({receivings.length})
                 </button>
               </div>
 
@@ -2170,29 +2361,17 @@ onClick={() => setCurrentTab(item.key as MainTab)}
                               </td>
                               <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
                                 {!isDone && !isStaff && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedPoForReceiving(po);
-                                        setIsReceivingModalOpen(true);
-                                      }}
-                                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold shadow-xs"
-                                    >
-                                      📥 Proses Receiving
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setPoCancelTarget(po);
-                                        setPoCancelReason("");
-                                        setIsPoCancelConfirmOpen(true);
-                                      }}
-                                      className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold shadow-xs"
-                                    >
-                                      Batal
-                                    </button>
-                                  </>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPoCancelTarget(po);
+                                      setPoCancelReason("");
+                                      setIsPoCancelConfirmOpen(true);
+                                    }}
+                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold shadow-xs"
+                                  >
+                                    Batal
+                                  </button>
                                 )}
                               </td>
                             </tr>
@@ -2204,12 +2383,23 @@ onClick={() => setCurrentTab(item.key as MainTab)}
                 </div>
               )}
 
-              {/* 4.2 SUB-MENU RECEIVING MASUK */}
+              {/* 4.2 MENU RECEIVING MASUK */}
               {poSubTab === "receiving_list" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                  <div>
-                    <span className="text-xs font-bold text-rose-950 uppercase">Riwayat Penerimaan Barang (Receivings)</span>
-                    <p className="text-[11px] text-slate-500">Log bukti penerimaan barang masuk ke gudang dari supplier</p>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-rose-950 uppercase">Penerimaan Barang (Receiving)</span>
+                      <p className="text-[11px] text-slate-500">Log bukti penerimaan barang masuk ke gudang dari supplier</p>
+                    </div>
+                    {!isStaff && (
+                      <button
+                        type="button"
+                        onClick={handleOpenNewReceiving}
+                        className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow transition"
+                      >
+                        + Terima Barang (Receiving Baru)
+                      </button>
+                    )}
                   </div>
 
                   <div className="overflow-x-auto text-xs">
@@ -2228,7 +2418,7 @@ onClick={() => setCurrentTab(item.key as MainTab)}
                       <tbody className="divide-y divide-rose-50">
                         {receivings.map((r) => (
                           <tr key={r.id} className="hover:bg-rose-50/30 transition">
-                            <td className="p-2.5 font-mono font-bold text-rose-900">{r.receivingId}</td>
+                            <td className="p-2.5 font-mono font-bold text-rose-900">{r.receivingId || r.documentNo}</td>
                             <td className="p-2.5 font-mono text-blue-700 font-bold">{r.poId}</td>
                             <td className="p-2.5">{r.date}</td>
                             <td className="p-2.5 font-medium">{r.supplier || "-"}</td>
@@ -2632,19 +2822,19 @@ onClick={() => setCurrentTab(item.key as MainTab)}
                   });
 
                   const exportItemData = filtered.flatMap((d) => {
-  const itemList = Array.isArray(d?.items) ? d.items : [];
-  return itemList.map((it: any) => ({
-    date: d?.date ?? "-",
-    doId: d?.doId ?? "-",
-    recipientName: d?.recipientName ?? "-",
-    sku: it?.sku ?? "-",
-    itemName: it?.itemName ?? "-",
-    qty: typeof it?.qty === "number" ? it.qty : 1,
-    price: typeof it?.price === "number" ? it.price : 0,
-    subtotal: (typeof it?.qty === "number" ? it.qty : 1) * (typeof it?.price === "number" ? it.price : 0),
-    expedition: d?.expedition ?? "-",
-  }));
-});
+                    const itemList = Array.isArray(d?.items) ? d.items : [];
+                    return itemList.map((it: any) => ({
+                      date: d?.date ?? "-",
+                      doId: d?.doId ?? "-",
+                      recipientName: d?.recipientName ?? "-",
+                      sku: it?.sku ?? "-",
+                      itemName: it?.itemName ?? "-",
+                      qty: typeof it?.qty === "number" ? it.qty : 1,
+                      price: typeof it?.price === "number" ? it.price : 0,
+                      subtotal: (typeof it?.qty === "number" ? it.qty : 1) * (typeof it?.price === "number" ? it.price : 0),
+                      expedition: d?.expedition ?? "-",
+                    }));
+                  });
 
                   return (
                     <div className="space-y-3">
@@ -2927,67 +3117,196 @@ onClick={() => setCurrentTab(item.key as MainTab)}
             </div>
           )}
 
-          {/* TAB 7: USER MANAGEMENT */}
+          {/* TAB 7: USER MANAGEMENT & SUPPLIERS */}
           {currentTab === "users" && isRootAdmin && (
-            <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-              <div className="flex justify-between items-center">
-                <div>
-                  <span className="text-xs font-bold text-rose-950 uppercase">Manajemen Pengguna (User Management)</span>
-                  <p className="text-[11px] text-slate-500">Hanya Root Admin yang berhak mendaftarkan user baru dengan role Staff</p>
-                </div>
+            <div className="space-y-4">
+              <div className="flex gap-2 border-b border-rose-200 pb-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setUserForm({ fullName: "", userId: "", password: "" });
-                    setIsAddUserModalOpen(true);
-                  }}
-                  className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                  onClick={() => setUserSubTab("staff")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    userSubTab === "staff" ? "bg-[#BE185D] text-white shadow" : "bg-white text-rose-900 border border-rose-200"
+                  }`}
                 >
-                  + Tambah User Baru
+                  Staff Gudang ({usersList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserSubTab("suppliers")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    userSubTab === "suppliers" ? "bg-[#BE185D] text-white shadow" : "bg-white text-rose-900 border border-rose-200"
+                  }`}
+                >
+                  Supplier Rekanan ({suppliers.length})
                 </button>
               </div>
 
-              <div className="overflow-x-auto text-xs">
-                <table className="w-full text-left">
-                  <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
-                    <tr>
-                      <th className="p-2.5">User ID / Username</th>
-                      <th className="p-2.5">Nama Lengkap</th>
-                      <th className="p-2.5">Role</th>
-                      <th className="p-2.5">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-rose-50">
-                    {usersList.map((u) => (
-                      <tr key={u.id} className="hover:bg-rose-50/30 transition">
-                        <td className="p-2.5 font-mono font-bold text-rose-900">{u.userId || u.username || u.id}</td>
-                        <td className="p-2.5 font-semibold text-rose-950">{u.fullName || u.name || "-"}</td>
-                        <td className="p-2.5">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            String(u.role).toLowerCase().includes("root")
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-blue-100 text-blue-800"
-                          }`}>
-                            {u.role || "Staff Gudang"}
-                          </span>
-                        </td>
-                        <td className="p-2.5">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                            Aktif
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                    {usersList.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="p-5 text-center text-slate-400">
-                          Belum ada daftar pengguna di database.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              {/* 7.1 STAFF GUDANG */}
+              {userSubTab === "staff" && (
+                <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-rose-950 uppercase">Manajemen Pengguna (User Management)</span>
+                      <p className="text-[11px] text-slate-500">Hanya Root Admin yang berhak mendaftarkan user baru dengan role Staff</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserForm({ fullName: "", userId: "", password: "" });
+                        setIsAddUserModalOpen(true);
+                      }}
+                      className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                    >
+                      + Tambah User Baru
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                        <tr>
+                          <th className="p-2.5">User ID / Username</th>
+                          <th className="p-2.5">Nama Lengkap</th>
+                          <th className="p-2.5">Role</th>
+                          <th className="p-2.5">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-rose-50">
+                        {usersList.map((u) => (
+                          <tr key={u.id} className="hover:bg-rose-50/30 transition">
+                            <td className="p-2.5 font-mono font-bold text-rose-900">{u.userId || u.username || u.id}</td>
+                            <td className="p-2.5 font-semibold text-rose-950">{u.fullName || u.name || "-"}</td>
+                            <td className="p-2.5">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                String(u.role).toLowerCase().includes("root")
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-blue-100 text-blue-800"
+                              }`}>
+                                {u.role || "Staff Gudang"}
+                              </span>
+                            </td>
+                            <td className="p-2.5">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                Aktif
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 7.2 SUPPLIER REKANAN & SKU UTILITY */}
+              {userSubTab === "suppliers" && (
+                <div className="space-y-4">
+                  {/* UTILITY PENONAKTIFAN SKU LAMA */}
+                  <div className="bg-gradient-to-r from-rose-50 to-amber-50 rounded-xl border border-rose-200 p-4 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <div className="text-xs font-bold text-rose-950 flex items-center gap-1.5">
+                        <span>🛡️</span>
+                        <span>Utilitas Penataan Katalog SKU Lama (Khusus ROOT_ADMIN)</span>
+                      </div>
+                      <p className="text-[11px] text-rose-700 mt-0.5">
+                        Total SKU Aktif: <b>{products.filter((p) => p.active !== false).length} SKU</b> | SKU Nonaktif: <b>{products.filter((p) => p.active === false).length} SKU</b> (Siap diaktifkan jika supplier telah ditetapkan: <b>{products.filter((p) => p.active === false && p.supplierId).length} SKU</b>)
+                      </p>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsDeactivateSkuModalOpen(true)}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
+                      >
+                        ⚡ Nonaktifkan Seluruh SKU Lama
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsReactivateSkuModalOpen(true)}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
+                      >
+                        ✓ Pulihkan / Aktifkan SKU Bersupplier
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* TABEL SUPPLIER */}
+                  <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="text-xs font-bold text-rose-950 uppercase">Daftar Supplier Rekanan</span>
+                        <p className="text-[11px] text-slate-500">Katalog supplier dengan kode unik berurutan SUPP-XXXX</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingSupplier(null);
+                          setIsSupplierModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                      >
+                        + Tambah Supplier Baru
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto text-xs">
+                      <table className="w-full text-left">
+                        <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                          <tr>
+                            <th className="p-2.5">Kode Supplier</th>
+                            <th className="p-2.5">Nama Supplier</th>
+                            <th className="p-2.5">No. Handphone</th>
+                            <th className="p-2.5">Alamat Lengkap</th>
+                            <th className="p-2.5">Total SKU Terkait</th>
+                            <th className="p-2.5 text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-rose-50">
+                          {suppliers.map((s) => {
+                            const linkedCount = products.filter((p) => p.supplierId === s.supplierId || p.supplierId === s.id).length;
+                            return (
+                              <tr key={s.id || s.supplierId} className="hover:bg-rose-50/30 transition">
+                                <td className="p-2.5 font-mono font-bold text-rose-900">{s.supplierId || s.documentNo}</td>
+                                <td className="p-2.5 font-bold text-rose-950">{s.supplierName}</td>
+                                <td className="p-2.5 font-mono text-slate-600">{s.phone}</td>
+                                <td className="p-2.5 max-w-xs truncate" title={s.address}>{s.address}</td>
+                                <td className="p-2.5 font-bold text-[#BE185D]">{linkedCount} SKU</td>
+                                <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingSupplier(s);
+                                      setIsSupplierModalOpen(true);
+                                    }}
+                                    className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold"
+                                  >
+                                    ✏️ Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSupplier(s)}
+                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
+                                  >
+                                    Hapus
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {suppliers.length === 0 && (
+                            <tr>
+                              <td colSpan={6} className="p-5 text-center text-slate-400">
+                                Belum ada supplier yang terdaftar.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -3023,6 +3342,7 @@ onClick={() => setCurrentTab(item.key as MainTab)}
         isOpen={isProductModalOpen}
         isEditing={isEditingProduct}
         families={families}
+        suppliers={suppliers}
         initialData={productFormData}
         onClose={() => setIsProductModalOpen(false)}
         onConfirmSave={handleSaveProduct}
@@ -3066,13 +3386,102 @@ onClick={() => setCurrentTab(item.key as MainTab)}
       <CreatePurchaseOrderModal
         isOpen={isCreatePoModalOpen}
         products={products}
+        suppliers={suppliers}
         onClose={() => setIsCreatePoModalOpen(false)}
         onSubmitPo={handleCreatePurchaseOrder}
         showAlert={showAlert}
       />
 
+      <SupplierModal
+        isOpen={isSupplierModalOpen}
+        isEditing={Boolean(editingSupplier)}
+        initialData={editingSupplier}
+        onClose={() => {
+          setIsSupplierModalOpen(false);
+          setEditingSupplier(null);
+        }}
+        onSave={handleSaveSupplier}
+      />
+
+      {/* MODAL KONFIRMASI PENONAKTIFAN SKU LAMA */}
+      {isDeactivateSkuModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-amber-200">
+            <h3 className="text-base font-bold text-amber-950 mb-1">Pratinjau Penonaktifan SKU Lama</h3>
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              Tindakan ini akan menonaktifkan status seluruh SKU yang saat ini berstatus <b>Aktif</b>. Status awal akan dibackup secara atomik sehingga dapat dipulihkan.
+            </p>
+
+            <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-xs text-amber-900 mb-4 space-y-1">
+              <div>Jumlah SKU terdampak: <b>{products.filter((p) => p.active !== false).length} SKU</b></div>
+              <div>Pengguna eksekutor: <b>{currentUser.name} (ROOT_ADMIN)</b></div>
+              <div className="text-[11px] text-amber-700 pt-1">
+                Catatan: SKU yang dinonaktifkan tidak akan muncul pada form pemesanan SO sampai diaktifkan kembali.
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={skuActionLoading}
+                onClick={() => setIsDeactivateSkuModalOpen(false)}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={skuActionLoading || products.filter((p) => p.active !== false).length === 0}
+                onClick={handleExecuteMassDeactivateSku}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow"
+              >
+                {skuActionLoading ? "Memproses Backup & Nonaktif..." : "Konfirmasi Nonaktifkan Seluruh SKU"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI AKTIVASI KEMBALI SKU */}
+      {isReactivateSkuModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-emerald-200">
+            <h3 className="text-base font-bold text-emerald-950 mb-1">Aktivasi Kembali SKU Bersupplier</h3>
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              Sistem akan memulihkan dan mengaktifkan kembali seluruh SKU nonaktif yang telah ditetapkan relasi supplier rekannya.
+            </p>
+
+            <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-xs text-emerald-900 mb-4 space-y-1">
+              <div>SKU siap diaktifkan: <b>{products.filter((p) => p.active === false && p.supplierId).length} SKU</b></div>
+              <div>SKU belum bersupplier (tetap nonaktif): <b>{products.filter((p) => p.active === false && !p.supplierId).length} SKU</b></div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={skuActionLoading}
+                onClick={() => setIsReactivateSkuModalOpen(false)}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={skuActionLoading || products.filter((p) => p.active === false && p.supplierId).length === 0}
+                onClick={handleExecuteMassReactivateSku}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow"
+              >
+                {skuActionLoading ? "Mengaktifkan..." : "Aktifkan Sekarang"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ReceivingModal
         isOpen={isReceivingModalOpen}
+        availablePos={purchaseOrders.filter((po) => ["OPEN", "PARTIAL"].includes(String(po.status || "").toUpperCase()))}
+        onSelectPo={(po: any) => setSelectedPoForReceiving(po)}
         selectedPo={selectedPoForReceiving}
         onClose={() => {
           setIsReceivingModalOpen(false);

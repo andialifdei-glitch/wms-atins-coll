@@ -1,0 +1,36 @@
+﻿                    >
+                      Simpan Alamat Toko
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* PENGATURAN API KEY RAJAONGKIR */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-rose-950 uppercase">Pengaturan API Key RajaOngkir (Komerce v1)</h3>
+                  <p className="text-xs text-rose-500">Uji koneksi terlebih dahulu. Tombol simpan hanya aktif jika API berhasil bekerja.</p>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="font-semibold block mb-1 text-slate-700">Input RajaOngkir API Key Baru</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Tempelkan API Key di sini..."
+                        value={inputApiKey}
+                        onChange={(e) => {
+                          setInputApiKey(e.target.value);
+                          setApiKeyTestedSuccess(false);
+                          setTestedToken(null);
+                        }}
+                        className="flex-1 p-2 border border-rose-200 rounded-lg font-mono font-bold text-[#BE185D] outline-none"
+                      />
+                      <button
+                        type="button"
+                        disabled={isTestingApiKey || !inputApiKey.trim()}
+                        onClick={handleTestApiKey}
+                        className="px-4 py-2 bg-purple-700 hover:bg-purple-800 disabled:bg-slate-300 text-white rounded-lg font-bold"
+                      >
+                        {isTestingApiKey ? "Menguji..." : "Ã°Å¸â€Â Uji Koneksi"}

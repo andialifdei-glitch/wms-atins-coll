@@ -60,6 +60,12 @@
       "namedRegex": "^/api/portal/data(?:/)?$"
     },
     {
+      "page": "/api/receiving/create",
+      "regex": "^/api/receiving/create(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/receiving/create(?:/)?$"
+    },
+    {
       "page": "/api/regions",
       "regex": "^/api/regions(?:/)?$",
       "routeKeys": {},
@@ -70,6 +76,12 @@
       "regex": "^/api/shipping/calculate(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/shipping/calculate(?:/)?$"
+    },
+    {
+      "page": "/api/suppliers",
+      "regex": "^/api/suppliers(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/suppliers(?:/)?$"
     },
     {
       "page": "/favicon.ico",
