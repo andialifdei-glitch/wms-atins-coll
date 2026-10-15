@@ -70,6 +70,7 @@ export default function Page() {
   }, []);
 
   const [currentTab, setCurrentTab] = useState<MainTab>("dashboard");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [salesSubTab, setSalesSubTab] = useState<"so" | "do">("so");
   const [invSubTab, setInvSubTab] = useState<string>("products");
   const [poSubTab, setPoSubTab] = useState<string>("po_list");
@@ -1358,8 +1359,22 @@ export default function Page() {
 
   return (
     <div className="flex h-screen bg-[#FFF5F6] font-sans text-rose-950">
+      
+{isMobileMenuOpen && (
+  <button
+    type="button"
+    aria-label="Tutup menu navigasi"
+    className="fixed inset-0 z-40 bg-black/40 md:hidden"
+    onClick={() => setIsMobileMenuOpen(false)}
+  />
+)}
+
       {/* SIDEBAR */}
-      <aside className="w-72 bg-[#4A2033] text-rose-100 flex flex-col shadow-2xl border-r border-[#6E354F]">
+      
+<aside className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-[#6E354F] bg-[#4A2033] text-rose-100 shadow-2xl transition-transform duration-200 md:relative md:inset-auto md:z-auto md:translate-x-0 md:shrink-0 ${
+  isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+}`}>
+
         <div className="p-5 border-b border-[#6E354F]">
           <div className="flex items-center gap-2">
             <span className="text-xl">🧥</span>
@@ -1389,7 +1404,12 @@ export default function Page() {
             <button
               key={item.key}
               type="button"
-              onClick={() => setCurrentTab(item.key as MainTab)}
+              
+onClick={() => {
+  setCurrentTab(item.key as MainTab);
+  setIsMobileMenuOpen(false);
+}}
+onClick={() => setCurrentTab(item.key as MainTab)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition ${
                 currentTab === item.key ? "bg-[#BE185D] text-white shadow" : "text-rose-200 hover:bg-[#5C2B42]"
               }`}
@@ -1412,7 +1432,17 @@ export default function Page() {
 
       {/* WORKSPACE */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b border-rose-100 px-8 py-4 flex items-center justify-between shadow-xs">
+        <header className="flex items-center justify-between gap-3 border-b border-rose-100 bg-white px-4 py-3 shadow-xs sm:px-6 md:px-8 md:py-4">
+          
+<button
+  type="button"
+  onClick={() => setIsMobileMenuOpen(true)}
+  className="shrink-0 rounded-lg border border-rose-200 px-3 py-2 text-sm text-rose-900 md:hidden"
+  aria-label="Buka menu navigasi"
+>
+  ☰
+</button>
+
           <div>
             <h2 className="text-lg font-bold text-rose-950 uppercase">
               {currentTab === "dashboard" && "Dashboard Operasional"}
