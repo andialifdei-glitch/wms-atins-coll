@@ -1,39 +1,11 @@
 {
   "version": 4,
   "routes": {
-    "/": {
-      "routeType": "page",
-      "response": "complete",
-      "compute": "static",
-      "htmlSize": 5510,
-      "experimentalBypassFor": [
-        {
-          "type": "header",
-          "key": "next-action"
-        },
-        {
-          "type": "header",
-          "key": "content-type",
-          "value": "multipart/form-data;.*"
-        }
-      ],
-      "initialRevalidateSeconds": false,
-      "srcRoute": "/",
-      "dataRoute": "/index.rsc",
-      "allowHeader": [
-        "host",
-        "x-matched-path",
-        "x-prerender-revalidate",
-        "x-prerender-revalidate-if-generated",
-        "x-next-revalidated-tags",
-        "x-next-revalidate-tag-token"
-      ]
-    },
     "/_global-error": {
       "routeType": "page",
       "response": "complete",
       "compute": "static",
-      "htmlSize": 8936,
+      "htmlSize": 8881,
       "experimentalBypassFor": [
         {
           "type": "header",
@@ -62,7 +34,7 @@
       "routeType": "page",
       "response": "complete",
       "compute": "static",
-      "htmlSize": 6399,
+      "htmlSize": 6342,
       "experimentalBypassFor": [
         {
           "type": "header",
@@ -122,7 +94,7 @@
       "routeType": "page",
       "response": "complete",
       "compute": "static",
-      "htmlSize": 7221,
+      "htmlSize": 7170,
       "experimentalBypassFor": [
         {
           "type": "header",
@@ -150,8 +122,8 @@
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "98e350e0464f1be86645057be97e7349",
-    "previewModeSigningKey": "a1ad0b23486e6ef5681bd18603f797bf959e5e8a150d1376c1c7c735dc2a99ef",
-    "previewModeEncryptionKey": "fe319596e678a3d661e0319c84665a9c5bf693e52d6013b5bdc231c1a33a7eb0"
+    "previewModeId": "70bf27b51e5bb15f7cd279a4c4ca80e6",
+    "previewModeSigningKey": "0c7e0cc9814ef7e14f0be3fbfeccce69ecba2f9f8c9c6f3065e4fe91f0bdbe84",
+    "previewModeEncryptionKey": "37cd75e8a04002d5b84a2ea30d8a381e65d6c778c7e724e4b64e3ead44eb8297"
   }
 }

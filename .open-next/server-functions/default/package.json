@@ -14,10 +14,10 @@
     "deploy:worker": "npm run build:worker && npx @opennextjs/cloudflare deploy"
   },
   "dependencies": {
-    "firebase": "^11.0.0",
+    "firebase": "^13.0.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
-    "next": "16.4.0",
+    "next": "^16.3.8",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "xlsx": "^0.18.5"

@@ -34,6 +34,41 @@ interface RegionItem {
 }
 
 export default function Page() {
+
+  const fetchDirectPortalData = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/portal/data");
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          const d = json.data;
+          if (Array.isArray(d.products)) setProducts(d.products);
+          if (Array.isArray(d.families)) setFamilies(d.families);
+          if (Array.isArray(d.customers)) setCustomers(d.customers);
+          if (Array.isArray(d.salesOrders)) setSalesOrders(d.salesOrders);
+          if (Array.isArray(d.deliveryOrders)) setDeliveryOrders(d.deliveryOrders);
+          if (Array.isArray(d.purchaseOrders)) setPurchaseOrders(d.purchaseOrders);
+          if (Array.isArray(d.receivings)) setReceivings(d.receivings);
+          if (Array.isArray(d.stockOpnames)) setStockOpnames(d.stockOpnames);
+          if (Array.isArray(d.stockAdjustments)) setStockAdjustments(d.stockAdjustments);
+          if (Array.isArray(d.stockMovements)) setStockMovements(d.stockMovements);
+          if (Array.isArray(d.users)) setUsersList(d.users);
+          const found = (d.settings || []).find((s: any) => s.id === "store_info");
+          if (found) setStoreSettings((prev: any) => ({ ...prev, ...found }));
+        }
+      }
+    } catch (e) {
+      console.error("Gagal load portal data:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDirectPortalData();
+  }, []);
+
   const [currentTab, setCurrentTab] = useState<MainTab>("dashboard");
   const [salesSubTab, setSalesSubTab] = useState<"so" | "do">("so");
   const [invSubTab, setInvSubTab] = useState<string>("products");
