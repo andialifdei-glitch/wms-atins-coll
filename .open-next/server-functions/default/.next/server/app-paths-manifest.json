@@ -6,9 +6,9 @@
   "/favicon.ico/route": "app/favicon.ico/route.js",
   "/api/login/route": "app/api/login/route.js",
   "/api/portal/data/route": "app/api/portal/data/route.js",
+  "/api/suppliers/route": "app/api/suppliers/route.js",
   "/api/receiving/create/route": "app/api/receiving/create/route.js",
   "/api/shipping/calculate/route": "app/api/shipping/calculate/route.js",
-  "/api/suppliers/route": "app/api/suppliers/route.js",
   "/login/page": "app/login/page.js",
   "/page": "app/page.js"
 }

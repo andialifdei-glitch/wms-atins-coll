@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { db } from "../lib/firebase";
 import {
   collection,
@@ -10,6 +10,7 @@ import {
   doc,
   updateDoc,
   setDoc,
+  deleteDoc,
   serverTimestamp,
   runTransaction,
 } from "firebase/firestore";
@@ -22,24 +23,118 @@ import StockOpnameModal from "@/components/modals/StockOpnameModal";
 import SalesOrderModal from "@/components/modals/SalesOrderModal";
 import CreatePurchaseOrderModal from "@/components/modals/CreatePurchaseOrderModal";
 import ReceivingModal from "@/components/modals/ReceivingModal";
-import ReportExportControls from "@/components/reports/ReportExportControls";
 import NotificationBell from "@/components/notifications/NotificationBell";
 import { createOperationalNotification } from "@/lib/notifications";
 
-type MainTab = "dashboard" | "sales" | "inventory" | "purchase" | "reports" | "settings" | "users";
+type MainTab = "dashboard" | "sales" | "inventory" | "purchase" | "reports" | "settings" | "human";
 
 interface RegionItem {
   id: string;
   name: string;
 }
 
-export default function Page() {
+// Generator Binary PDF Murni (Standar PDF-1.4 Valid) agar tidak korup di PDF reader
+function generateValidPdfBlob(title: string, headers: string[], rows: any[][]): Blob {
+  const sanitize = (text: string) => String(text || "-").replace(/[\\()]/g, " ");
+
+  let contentStream = "BT\n/F1 14 Tf\n40 790 Td\n(" + sanitize(title) + ") Tj\nET\n";
+  contentStream += "BT\n/F1 8 Tf\n40 775 Td\n(Dicetak: " + sanitize(new Date().toLocaleString("id-ID")) + ") Tj\nET\n";
+
+  let y = 750;
+  // Header Table
+  contentStream += "BT\n/F1 9 Tf\n";
+  let x = 40;
+  headers.forEach((h) => {
+    contentStream += `${x} ${y} Td\n(${sanitize(h)}) Tj\n${-x} ${-y} Td\n`;
+    x += 100;
+  });
+  contentStream += "ET\n";
+
+  // Rows
+  y -= 15;
+  contentStream += "BT\n/F1 8 Tf\n";
+  rows.slice(0, 45).forEach((row) => {
+    let rx = 40;
+    row.forEach((cell) => {
+      contentStream += `${rx} ${y} Td\n(${sanitize(String(cell))}) Tj\n${-rx} ${-y} Td\n`;
+      rx += 100;
+    });
+    y -= 13;
+  });
+  contentStream += "ET\n";
+
+  const streamLen = contentStream.length;
+  const pdfString =
+`%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length ${streamLen} >>
+stream
+${contentStream}
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000234 00000 n 
+0000000${String(300 + streamLen).padStart(3, "0")} 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+${380 + streamLen}
+%%EOF`;
+
+  return new Blob([pdfString], { type: "application/pdf" });
+}
+
+function downloadPdf(title: string, filename: string, headers: string[], rows: any[][]) {
+  const blob = generateValidPdfBlob(title, headers, rows);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filename}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function downloadExcel(docNo: string, filename: string, headers: string[], rows: any[][]) {
+  const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.map((c) => `"${String(c || "").replace(/"/g, '""')}"`).join(","))].join("\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${filename}_${docNo}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+export default function DashboardClient() {
+  const router = useRouter();
+
+  // Tabs
   const [currentTab, setCurrentTab] = useState<MainTab>("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [salesSubTab, setSalesSubTab] = useState<"so" | "do">("so");
   const [invSubTab, setInvSubTab] = useState<string>("products");
   const [poSubTab, setPoSubTab] = useState<string>("po_list");
-  const [reportSubTab, setReportSubTab] = useState<"so" | "do" | "po" | "receiving" | "opname" | "stock" | "sales">("so");
+  const [reportSubTab, setReportSubTab] = useState<"so" | "do" | "po" | "receiving" | "opname" | "stock" | "sales" | "customer">("so");
+  const [humanSubTab, setHumanSubTab] = useState<"staff" | "suppliers" | "customers">("staff");
 
   // Master Data
   const [products, setProducts] = useState<any[]>([]);
@@ -54,17 +149,23 @@ export default function Page() {
   const [stockMovements, setStockMovements] = useState<any[]>([]);
   const [usersList, setUsersList] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [soSearchQuery, setSoSearchQuery] = useState("");
-  const [productSearchQuery, setProductSearchQuery] = useState("");
-  const [userSubTab, setUserSubTab] = useState<"staff" | "suppliers">("staff");
-  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState<any | null>(null);
-  const [isDeactivateSkuModalOpen, setIsDeactivateSkuModalOpen] = useState(false);
-  const [isReactivateSkuModalOpen, setIsReactivateSkuModalOpen] = useState(false);
-  const [skuActionLoading, setSkuActionLoading] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Store Settings
+  // Search & Filter
+  const [soSearchQuery, setSoSearchQuery] = useState("");
+  const [productSearchQuery, setProductSearchQuery] = useState("");
+  const [soStatusFilter, setSoStatusFilter] = useState<string>("ALL");
+  const [ledgerSearch, setLedgerSearch] = useState("");
+  const [salesReportType, setSalesReportType] = useState<"day" | "item" | "summary">("summary");
+
+  // User & Store Settings
+  const [currentUser, setCurrentUser] = useState<{ id: string; role: string; name: string; username?: string }>({
+    id: "admin",
+    role: "Root Admin",
+    name: "Root Administrator",
+    username: "admin",
+  });
+
   const [storeSettings, setStoreSettings] = useState({
     storeName: "Atin's Collection",
     storePhone: "0899-7884-435",
@@ -82,37 +183,68 @@ export default function Page() {
     labelSize: "58mm",
     rajaOngkirApiKey: "",
     defaultOriginId: 4997,
+    btPrinterDeviceName: "",
   });
 
-  // Wilayah & API Key
-  const [provinces, setProvinces] = useState<RegionItem[]>([]);
-  const [regencies, setRegencies] = useState<RegionItem[]>([]);
-  const [districts, setDistricts] = useState<RegionItem[]>([]);
-  const [villages, setVillages] = useState<RegionItem[]>([]);
-  const [loadingRegion, setLoadingRegion] = useState(false);
-
-  const [inputApiKey, setInputApiKey] = useState("");
-  const [apiKeyTestedSuccess, setApiKeyTestedSuccess] = useState(false);
-  const [testedToken, setTestedToken] = useState<string | null>(null);
-  const [isTestingApiKey, setIsTestingApiKey] = useState(false);
-  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
-  const [isApiSuccessModalOpen, setIsApiSuccessModalOpen] = useState(false);
-
-  // User Session
-  const [currentUser, setCurrentUser] = useState<{ id: string; role: string; name: string; username?: string }>({
-    id: "admin",
-    role: "Root Admin",
-    name: "Root Administrator",
-    username: "admin",
-  });
-
+  // Modal & Alerts
   const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title: string; message: string }>({
     isOpen: false,
     title: "",
     message: "",
   });
+  const [isSessionTimeoutOpen, setIsSessionTimeoutOpen] = useState(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Modal State
+  // SO Detail & Action
+  const [selectedSoDetail, setSelectedSoDetail] = useState<any | null>(null);
+  const [isSoDetailModalOpen, setIsSoDetailModalOpen] = useState(false);
+  const [soCancelTarget, setSoCancelTarget] = useState<any | null>(null);
+  const [soCancelReason, setSoCancelReason] = useState("");
+  const [isSoCancelConfirmOpen, setIsSoCancelConfirmOpen] = useState(false);
+
+  // DO Bluetooth & Actions
+  const [doCancelTarget, setDoCancelTarget] = useState<any | null>(null);
+  const [doCancelReason, setDoCancelReason] = useState("");
+  const [isDoCancelConfirmOpen, setIsDoCancelConfirmOpen] = useState(false);
+  const [btPrintDevice, setBtPrintDevice] = useState<any | null>(null);
+  const [btStatus, setBtStatus] = useState<string>("Belum Terkoneksi");
+
+  // SOP Review & Post
+  const [reviewSopTarget, setReviewSopTarget] = useState<any | null>(null);
+  const [isSopReviewModalOpen, setIsSopReviewModalOpen] = useState(false);
+  const [reviewItemsData, setReviewItemsData] = useState<any[]>([]);
+  const [sopCancelTarget, setSopCancelTarget] = useState<any | null>(null);
+  const [sopCancelReason, setSopCancelReason] = useState("");
+  const [sopCountdown, setSopCountdown] = useState(10);
+  const [isSopCancelConfirmOpen, setIsSopCancelConfirmOpen] = useState(false);
+
+  // PO & Customer State
+  const [poCancelTarget, setPoCancelTarget] = useState<any | null>(null);
+  const [poCancelReason, setPoCancelReason] = useState("");
+  const [isPoCancelConfirmOpen, setIsPoCancelConfirmOpen] = useState(false);
+  const [customerModalMode, setCustomerModalMode] = useState<"create" | "edit">("create");
+  const [customerForm, setCustomerForm] = useState({
+    customerId: "",
+    customerName: "",
+    phone: "",
+    email: "",
+    address: "",
+    displayAddress: "",
+  });
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+
+  // Staff CRUD State
+  const [staffModalMode, setStaffModalMode] = useState<"create" | "edit">("create");
+  const [staffForm, setStaffForm] = useState({
+    staffId: "",
+    fullName: "",
+    userId: "",
+    password: "",
+  });
+  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+
+  // External Component Modals
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isEditingProduct, setIsEditingProduct] = useState(false);
   const [productFormData, setProductFormData] = useState<any>({
@@ -125,7 +257,6 @@ export default function Page() {
     netPrice: 0,
     initialStock: 0,
   });
-
   const [isAdjModalOpen, setIsAdjModalOpen] = useState(false);
   const [isInitSopModalOpen, setIsInitSopModalOpen] = useState(false);
   const [isSoModalOpen, setIsSoModalOpen] = useState(false);
@@ -136,126 +267,62 @@ export default function Page() {
   const [soModalInitCost, setSoModalInitCost] = useState<number>(0);
   const [soModalInitCourier, setSoModalInitCourier] = useState<string>("");
   const [soModalInitService, setSoModalInitService] = useState<string>("");
-
-  const [soStatusFilter, setSoStatusFilter] = useState<string>("ALL");
-  const [processingConfirmTarget, setProcessingConfirmTarget] = useState<any | null>(null);
   const [isEditExpeditionModalOpen, setIsEditExpeditionModalOpen] = useState(false);
   const [targetProcessingSo, setTargetProcessingSo] = useState<any | null>(null);
-
-  // PO & Receiving
   const [isCreatePoModalOpen, setIsCreatePoModalOpen] = useState(false);
   const [isReceivingModalOpen, setIsReceivingModalOpen] = useState(false);
   const [selectedPoForReceiving, setSelectedPoForReceiving] = useState<any | null>(null);
-  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
-  const [userForm, setUserForm] = useState({ fullName: "", userId: "", password: "" });
-
-  // Logout & Cancellation
-  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
-  const [ledgerSearch, setLedgerSearch] = useState("");
+  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<any | null>(null);
   const [selectedProductLedger, setSelectedProductLedger] = useState<any | null>(null);
-  const [sopCancelTarget, setSopCancelTarget] = useState<any | null>(null);
-  const [sopCancelReason, setSopCancelReason] = useState("");
-  const [sopCountdown, setSopCountdown] = useState(10);
-  const [isSopCancelConfirmOpen, setIsSopCancelConfirmOpen] = useState(false);
-  const [poCancelTarget, setPoCancelTarget] = useState<any | null>(null);
-  const [poCancelReason, setPoCancelReason] = useState("");
-  const [isPoCancelConfirmOpen, setIsPoCancelConfirmOpen] = useState(false);
 
-  // Report Filter State
-  const [salesReportType, setSalesReportType] = useState<"day" | "item" | "summary">("summary");
-  const [reportStartDate, setReportStartDate] = useState<string>("");
-  const [reportEndDate, setReportEndDate] = useState<string>("");
+  // Wilayah & RajaOngkir API
+  const [provinces, setProvinces] = useState<RegionItem[]>([]);
+  const [regencies, setRegencies] = useState<RegionItem[]>([]);
+  const [districts, setDistricts] = useState<RegionItem[]>([]);
+  const [villages, setVillages] = useState<RegionItem[]>([]);
+  const [loadingRegion, setLoadingRegion] = useState(false);
+  const [inputApiKey, setInputApiKey] = useState("");
+  const [apiKeyTestedSuccess, setApiKeyTestedSuccess] = useState(false);
+  const [testedToken, setTestedToken] = useState<string | null>(null);
+  const [isTestingApiKey, setIsTestingApiKey] = useState(false);
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
+  const [isApiSuccessModalOpen, setIsApiSuccessModalOpen] = useState(false);
 
-  const router = useRouter();
-
-  const isRootAdmin = useMemo(() => {
-    const roleClean = String(currentUser.role || "").trim().toLowerCase();
-    const userClean = String(currentUser.username || currentUser.id || "").trim().toLowerCase();
-    return userClean === "admin" || roleClean.includes("root");
-  }, [currentUser]);
-
-  const isStaff = useMemo(() => {
-    const roleClean = String(currentUser.role || "").trim().toLowerCase();
-    return roleClean.includes("staff");
-  }, [currentUser]);
-
-  const showAlert = (message: string, title = "Informasi") => {
-    setAlertModal({ isOpen: true, title, message });
-  };
-
-  const handleOpenNewReceiving = () => {
-    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk melakukan receiving!", "Akses Ditolak");
-    const validPos = purchaseOrders.filter((po) => {
-      const st = String(po.status || "").toUpperCase();
-      if (st !== "OPEN" && st !== "PARTIAL") return false;
-      return (po.items || []).some((it: any) => {
-        const remaining = Math.max(0, Number(it.qty || 0) - Number(it.receivedQty || 0));
-        return remaining > 0;
-      });
-    });
-
-    if (validPos.length === 0) {
-      return showAlert(
-        "Tidak ada Purchase Order (PO) aktif (OPEN / PARTIAL) yang dapat diproses penerimaannya.",
-        "PO Tidak Tersedia"
-      );
+  // Force Logout saat buka web pertama kali
+  useEffect(() => {
+    const hasVisited = sessionStorage.getItem("wms_visited_session");
+    if (!hasVisited) {
+      sessionStorage.setItem("wms_visited_session", "true");
+      document.cookie = "admin_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+      router.push("/login");
     }
+  }, [router]);
 
-    setSelectedPoForReceiving(validPos[0]);
-    setIsReceivingModalOpen(true);
+  // Session Timeout (5 Menit)
+  const resetIdleTimer = () => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = setTimeout(() => setIsSessionTimeoutOpen(true), 5 * 60 * 1000);
   };
-
-  function handleNavigateFromNotification(docType: string, docId: string) {
-    switch (docType) {
-      case "SO":
-        setCurrentTab("sales");
-        setSalesSubTab("so");
-        break;
-      case "DO":
-        setCurrentTab("sales");
-        setSalesSubTab("do");
-        break;
-      case "PO":
-        setCurrentTab("purchase");
-        setPoSubTab("po_list");
-        break;
-      case "RECEIVING":
-        setCurrentTab("purchase");
-        setPoSubTab("receiving_list");
-        break;
-      case "SOP":
-        setCurrentTab("inventory");
-        setInvSubTab("opname");
-        break;
-      case "ADJ":
-        setCurrentTab("inventory");
-        setInvSubTab("adjustment");
-        break;
-      case "USER":
-        if (isRootAdmin) setCurrentTab("users");
-        break;
-      default:
-        break;
-    }
-  }
-
-  function handleExecuteLogout() {
-    setIsLogoutConfirmOpen(false);
-    document.cookie = "admin_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-    router.push("/login");
-  }
 
   useEffect(() => {
-    if (!isSopCancelConfirmOpen) {
-      setSopCountdown(10);
-      return;
-    }
-    if (sopCountdown > 0) {
-      const timer = setTimeout(() => setSopCountdown((c) => c - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [isSopCancelConfirmOpen, sopCountdown]);
+    const events = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+    const handleActivity = () => resetIdleTimer();
+    events.forEach((ev) => window.addEventListener(ev, handleActivity));
+    resetIdleTimer();
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, handleActivity));
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    };
+  }, []);
 
+  const handleSessionTimeoutLogout = () => {
+    setIsSessionTimeoutOpen(false);
+    document.cookie = "admin_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+    router.push("/login");
+  };
+
+  // Auth User Session Init
   useEffect(() => {
     try {
       const match = document.cookie.split("; ").find((row) => row.startsWith("admin_session="));
@@ -272,6 +339,22 @@ export default function Page() {
     } catch {}
   }, []);
 
+  const isRootAdmin = useMemo(() => {
+    const roleClean = String(currentUser.role || "").trim().toLowerCase();
+    const userClean = String(currentUser.username || currentUser.id || "").trim().toLowerCase();
+    return userClean === "admin" || roleClean.includes("root");
+  }, [currentUser]);
+
+  const isStaff = useMemo(() => {
+    const roleClean = String(currentUser.role || "").trim().toLowerCase();
+    return roleClean.includes("staff");
+  }, [currentUser]);
+
+  const showAlert = (message: string, title = "Informasi") => {
+    setAlertModal({ isOpen: true, title, message });
+  };
+
+  // Load Firestore Data
   async function loadAllData() {
     setLoading(true);
     try {
@@ -334,18 +417,7 @@ export default function Page() {
       setStockAdjustments(adjSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setStockMovements(mvSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setUsersList(uSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      if (suppSnap) {
-        setSuppliers(suppSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }
-
-      const foundSettings = setDocSnap.docs.find((d) => d.id === "store_info");
-      if (foundSettings) {
-        const data = foundSettings.data();
-        setStoreSettings((prev) => ({ ...prev, ...data }));
-        if (data.rajaOngkirApiKey) {
-          setInputApiKey(data.rajaOngkirApiKey);
-        }
-      }
+      if (suppSnap) setSuppliers(suppSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (err: any) {
       console.error("Gagal load Firestore:", err);
     } finally {
@@ -353,1165 +425,18 @@ export default function Page() {
     }
   }
 
-  useEffect(() => {
-    loadAllData();
-  }, []);
+  useEffect(() => { loadAllData(); }, []);
 
-  useEffect(() => {
-    if (currentTab === "settings" && provinces.length === 0) {
-      setLoadingRegion(true);
-      fetch("/api/regions")
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data)) setProvinces(data);
-        })
-        .catch((err) => console.error("Gagal load provinsi:", err))
-        .finally(() => setLoadingRegion(false));
-    }
-  }, [currentTab, provinces.length]);
-
-  async function handleProvinceChange(pCode: string) {
-    const prov = provinces.find((p) => p.id === pCode);
-    setStoreSettings((prev) => ({
-      ...prev,
-      provinceCode: pCode,
-      provinceName: prov?.name || "",
-      regencyCode: "",
-      regencyName: "",
-      districtCode: "",
-      districtName: "",
-      villageCode: "",
-      villageName: "",
-    }));
-    setRegencies([]);
-    setDistricts([]);
-    setVillages([]);
-    if (!pCode) return;
-
-    setLoadingRegion(true);
-    try {
-      const res = await fetch(`/api/regions?type=regencies&code=${pCode}`);
-      const data = await res.json();
-      if (Array.isArray(data)) setRegencies(data);
-    } finally {
-      setLoadingRegion(false);
-    }
-  }
-
-  async function handleRegencyChange(rCode: string) {
-    const reg = regencies.find((r) => r.id === rCode);
-    setStoreSettings((prev) => ({
-      ...prev,
-      regencyCode: rCode,
-      regencyName: reg?.name || "",
-      districtCode: "",
-      districtName: "",
-      villageCode: "",
-      villageName: "",
-    }));
-    setDistricts([]);
-    setVillages([]);
-    if (!rCode) return;
-
-    setLoadingRegion(true);
-    try {
-      const res = await fetch(`/api/regions?type=districts&code=${rCode}`);
-      const data = await res.json();
-      if (Array.isArray(data)) setDistricts(data);
-    } finally {
-      setLoadingRegion(false);
-    }
-  }
-
-  async function handleDistrictChange(dCode: string) {
-    const dist = districts.find((d) => d.id === dCode);
-    setStoreSettings((prev) => ({
-      ...prev,
-      districtCode: dCode,
-      districtName: dist?.name || "",
-      villageCode: "",
-      villageName: "",
-    }));
-    setVillages([]);
-    if (!dCode) return;
-
-    setLoadingRegion(true);
-    try {
-      const res = await fetch(`/api/regions?type=villages&code=${dCode}`);
-      const data = await res.json();
-      if (Array.isArray(data)) setVillages(data);
-    } finally {
-      setLoadingRegion(false);
-    }
-  }
-
-  function handleVillageChange(vCode: string) {
-    const vil = villages.find((v) => v.id === vCode);
-    setStoreSettings((prev) => ({
-      ...prev,
-      villageCode: vCode,
-      villageName: vil?.name || "",
-    }));
-  }
-
-  async function handleSaveStoreAddress(e: React.FormEvent) {
-    e.preventDefault();
-    if (!storeSettings.provinceName || !storeSettings.regencyName || !storeSettings.districtName || !storeSettings.villageName) {
-      return showAlert("Harap lengkapi pemilihan Provinsi, Kabupaten/Kota, Kecamatan, dan Desa/Kelurahan!", "Peringatan");
-    }
-
-    const fullAddr = `${storeSettings.detailAddress ? storeSettings.detailAddress.trim() + ", " : ""}Desa/Kel. ${storeSettings.villageName}, Kec. ${storeSettings.districtName}, ${storeSettings.regencyName}, ${storeSettings.provinceName}${storeSettings.postalCode ? " " + storeSettings.postalCode : ""}`;
-
-    try {
-      setLoading(true);
-      await setDoc(
-        doc(db, "settings", "store_info"),
-        {
-          ...storeSettings,
-          storeAddress: fullAddr,
-          updatedAt: serverTimestamp(),
-          updatedBy: currentUser.name,
-        },
-        { merge: true }
-      );
-      setStoreSettings((prev) => ({ ...prev, storeAddress: fullAddr }));
-      showAlert("Alamat resmi toko berhasil disimpan!", "Sukses");
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal menyimpan alamat toko");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleTestApiKey() {
-    if (!inputApiKey.trim()) return showAlert("Masukkan API Key terlebih dahulu!", "Peringatan");
-    setIsTestingApiKey(true);
-    setApiKeyTestedSuccess(false);
-    setTestedToken(null);
-
-    try {
-      const res = await fetch("/api/shipping/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "TEST_CONNECTION",
-          apiKey: inputApiKey.trim(),
-          userRole: currentUser.role,
-        }),
-      });
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        setTestedToken(data.token);
-        setIsApiSuccessModalOpen(true);
-      } else {
-        showAlert(data.message || "API Key tidak bekerja. Periksa kembali kunci Anda.", "Gagal Terhubung");
-      }
-    } catch (e: any) {
-      showAlert("Terjadi kendala jaringan saat menghubungi server pengujian.", "Error");
-    } finally {
-      setIsTestingApiKey(false);
-    }
-  }
-
-  async function handleConfirmAndSaveApiKey() {
-    if (!apiKeyTestedSuccess || !testedToken) {
-      return showAlert("API Key harus diuji terlebih dahulu!", "Peringatan");
-    }
-
-    setIsSavingApiKey(true);
-    try {
-      const res = await fetch("/api/shipping/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "CONFIRM_AND_SAVE",
-          apiKey: inputApiKey.trim(),
-          userRole: currentUser.role,
-          token: testedToken,
-        }),
-      });
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        showAlert("Perubahan API Key RajaOngkir berhasil disimpan!", "Sukses");
-        setStoreSettings((prev) => ({ ...prev, rajaOngkirApiKey: inputApiKey.trim() }));
-        setApiKeyTestedSuccess(false);
-        setTestedToken(null);
-        loadAllData();
-      } else {
-        showAlert(data.message || "Gagal menyimpan API Key.", "Error");
-      }
-    } catch (err: any) {
-      showAlert(err.message || "Gagal menghubungi server", "Error");
-    } finally {
-      setIsSavingApiKey(false);
-    }
-  }
-
-  async function handleCreateUser(e: React.FormEvent) {
-    e.preventDefault();
-    if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak menambahkan user!", "Akses Ditolak");
-    if (!userForm.fullName.trim() || !userForm.userId.trim() || !userForm.password.trim()) {
-      return showAlert("Nama Lengkap, User ID, dan Password wajib diisi!", "Peringatan");
-    }
-
-    try {
-      setLoading(true);
-      const cleanId = userForm.userId.trim().toLowerCase();
-      const userRef = doc(db, "users", cleanId);
-
-      await setDoc(userRef, {
-        userId: cleanId,
-        username: cleanId,
-        fullName: userForm.fullName.trim(),
-        name: userForm.fullName.trim(),
-        password: userForm.password,
-        role: "Staff Gudang",
-        active: true,
-        createdAt: serverTimestamp(),
-        createdBy: currentUser.name,
-      });
-
-      setIsAddUserModalOpen(false);
-      setUserForm({ fullName: "", userId: "", password: "" });
-      await createOperationalNotification({
-        eventType: "USER_CREATED",
-        documentType: "USER",
-        documentId: cleanId,
-        documentNo: cleanId,
-        actorId: currentUser.id,
-        actorName: currentUser.name,
-        targetUserName: userForm.fullName.trim(),
-      });
-      showAlert(`User [${cleanId}] dengan role Staff Gudang berhasil didaftarkan!`, "Sukses");
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal mendaftarkan user baru.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSaveSupplier(formData: any) {
-    if (!isRootAdmin) return showAlert("Hanya ROOT_ADMIN yang berhak mengelola supplier!", "Akses Ditolak");
-    try {
-      setLoading(true);
-      if (editingSupplier && editingSupplier.supplierId) {
-        await updateDoc(doc(db, "suppliers", editingSupplier.supplierId), {
-          supplierName: formData.supplierName.trim(),
-          phone: formData.phone.trim(),
-          address: formData.address.trim(),
-          updatedAt: serverTimestamp(),
-          updatedBy: currentUser.name,
-        });
-        showAlert(`Supplier [${editingSupplier.supplierId}] berhasil diperbarui!`, "Sukses");
-      } else {
-        const counterRef = doc(db, "counters", "supplier");
-        const newSuppId = await runTransaction(db, async (tx) => {
-          const cSnap = await tx.get(counterRef);
-          const curr = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
-          const next = curr + 1;
-          const generatedId = `SUPP-${String(next).padStart(4, "0")}`;
-          tx.set(counterRef, { currentNumber: next, updatedAt: serverTimestamp() }, { merge: true });
-          tx.set(doc(db, "suppliers", generatedId), {
-            supplierId: generatedId,
-            documentNo: generatedId,
-            supplierName: formData.supplierName.trim(),
-            phone: formData.phone.trim(),
-            address: formData.address.trim(),
-            active: true,
-            createdAt: serverTimestamp(),
-            createdBy: currentUser.name,
-            updatedAt: serverTimestamp(),
-          });
-          return generatedId;
-        });
-        showAlert(`Supplier baru [${newSuppId}] berhasil ditambahkan!`, "Sukses");
-      }
-      setIsSupplierModalOpen(false);
-      setEditingSupplier(null);
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal menyimpan data supplier.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleDeleteSupplier(supp: any) {
-    if (!isRootAdmin) return showAlert("Hanya ROOT_ADMIN yang berhak menghapus supplier!", "Akses Ditolak");
-    if (!confirm(`Hapus data supplier ${supp.supplierName} (${supp.supplierId})?`)) return;
-    try {
-      setLoading(true);
-      await updateDoc(doc(db, "suppliers", supp.supplierId), {
-        active: false,
-        deletedAt: serverTimestamp(),
-        deletedBy: currentUser.name,
-      });
-      showAlert(`Supplier [${supp.supplierId}] dinonaktifkan.`, "Sukses");
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal menghapus supplier.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleExecuteMassDeactivateSku() {
-    if (!isRootAdmin) return showAlert("Hanya ROOT_ADMIN yang berhak menonaktifkan massal SKU!", "Akses Ditolak");
-    try {
-      setSkuActionLoading(true);
-      const activeProducts = products.filter((p) => p.active !== false);
-      if (activeProducts.length === 0) {
-        setIsDeactivateSkuModalOpen(false);
-        return showAlert("Tidak ada SKU aktif yang perlu dinonaktifkan.");
-      }
-
-      const todayStr = new Date().toISOString().replace(/[:.]/g, "-");
-      const backupId = `SKU_BACKUP_${todayStr}`;
-      const backupData = activeProducts.map((p) => ({
-        sku: p.sku,
-        active: p.active !== false,
-        supplierId: p.supplierId || null,
-      }));
-
-      await setDoc(doc(db, "sku_status_backups", backupId), {
-        backupId: backupId,
-        createdAt: serverTimestamp(),
-        createdBy: currentUser.name,
-        totalSkus: backupData.length,
-        items: backupData,
-      });
-
-      for (const p of activeProducts) {
-        await updateDoc(doc(db, "products", p.sku), {
-          active: false,
-          status: "INACTIVE",
-          deactivatedAt: serverTimestamp(),
-          deactivatedBy: currentUser.name,
-          backupRef: backupId,
-        });
-      }
-
-      setIsDeactivateSkuModalOpen(false);
-      showAlert(`${activeProducts.length} SKU berhasil dinonaktifkan. Backup disimpan dengan ID: ${backupId}`, "Sukses");
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal menonaktifkan SKU massal.");
-    } finally {
-      setSkuActionLoading(false);
-    }
-  }
-
-  async function handleExecuteMassReactivateSku() {
-    if (!isRootAdmin) return showAlert("Hanya ROOT_ADMIN yang berhak mengaktifkan SKU!", "Akses Ditolak");
-    try {
-      setSkuActionLoading(true);
-      const eligibleProducts = products.filter((p) => p.active === false && p.supplierId);
-      if (eligibleProducts.length === 0) {
-        setIsReactivateSkuModalOpen(false);
-        return showAlert("Tidak ada SKU nonaktif yang memiliki relasi Supplier.");
-      }
-
-      for (const p of eligibleProducts) {
-        await updateDoc(doc(db, "products", p.sku), {
-          active: true,
-          status: "ACTIVE",
-          reactivatedAt: serverTimestamp(),
-          reactivatedBy: currentUser.name,
-        });
-      }
-
-      setIsReactivateSkuModalOpen(false);
-      showAlert(`${eligibleProducts.length} SKU dengan supplier terdaftar berhasil diaktifkan kembali!`, "Sukses");
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal mengaktifkan kembali SKU.");
-    } finally {
-      setSkuActionLoading(false);
-    }
-  }
-
-  async function handleSaveProduct(savedData: any) {
-    try {
-      setLoading(true);
-      if (isEditingProduct) {
-        if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak mengedit produk.");
-        await updateDoc(doc(db, "products", savedData.sku), {
-          itemName: savedData.itemName.trim(),
-          supplierId: savedData.supplierId || "",
-          supplierName: savedData.supplierName || "",
-          purchasingPrice: Number(savedData.purchasingPrice),
-          netPrice: Number(savedData.netPrice),
-          active: Boolean(savedData.active),
-          status: savedData.active ? "ACTIVE" : "INACTIVE",
-          updatedAt: serverTimestamp(),
-          updatedBy: currentUser.name,
-        });
-        showAlert(`Parameter produk ${savedData.sku} berhasil diperbarui.`);
-      } else {
-        const famCode = savedData.familyCode.trim() || families[0]?.familyCode || "FAM-001";
-        const famNum = parseInt(famCode.replace(/[^0-9]/g, ""), 10) || 1;
-        const initStock = Number(savedData.initialStock) || 0;
-
-        await runTransaction(db, async (tx) => {
-          const fCountRef = doc(db, "family_counters", famCode);
-          const fSnap = await tx.get(fCountRef);
-          const curSeq = fSnap.exists() ? (fSnap.data().currentProductNumber || 0) : 0;
-          const nextSeq = curSeq + 1;
-          const candidateSku = `SKU-${String(famNum).padStart(3, "0")}${String(nextSeq).padStart(3, "0")}`;
-
-          tx.set(fCountRef, { familyCode: famCode, currentProductNumber: nextSeq, updatedAt: serverTimestamp() });
-          tx.set(doc(db, "products", candidateSku), {
-            productId: candidateSku,
-            sku: candidateSku,
-            familyCode: famCode,
-            itemName: savedData.itemName.trim(),
-            supplierId: savedData.supplierId || "",
-            supplierName: savedData.supplierName || "",
-            lastReceiving: "-",
-            stock: initStock,
-            purchasingPrice: Number(savedData.purchasingPrice),
-            netPrice: Number(savedData.netPrice),
-            weightInGrams: Number(savedData.weightInGrams) || 0,
-            active: Boolean(savedData.active),
-            status: savedData.active ? "ACTIVE" : "INACTIVE",
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            createdBy: currentUser.name,
-          });
-
-          if (initStock > 0) {
-            const mvRef = doc(collection(db, "stock_movements"));
-            tx.set(mvRef, {
-              movementId: mvRef.id,
-              date: new Date().toISOString().split("T")[0],
-              itemCode: candidateSku,
-              itemNameSnapshot: savedData.itemName.trim(),
-              type: "ADJUSTMENT",
-              referenceId: "INITIAL_STOCK",
-              qtyIn: initStock,
-              qtyOut: 0,
-              previousStock: 0,
-              newStock: initStock,
-              reason: "Inisialisasi Stok Awal Produk",
-              user: currentUser.name,
-              timestamp: serverTimestamp(),
-            });
-          }
-        });
-        showAlert("Produk baru berhasil disimpan!");
-      }
-      setIsProductModalOpen(false);
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal menyimpan data produk.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleExecuteStockAdjustment(formData: any) {
-    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk melakukan Stock Adjustment!", "Akses Ditolak");
-    try {
-      setLoading(true);
-      const prod = products.find((p) => p.sku === formData.sku);
-      if (!prod) throw new Error("Produk tidak ditemukan!");
-
-      const today = new Date();
-      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
-      const displayDate = today.toISOString().split("T")[0];
-      const adjId = `Adj-${dateStr}-${String(Math.floor(1000 + Math.random() * 9000))}`;
-
-      await runTransaction(db, async (tx) => {
-        const pRef = doc(db, "products", formData.sku);
-        const pSnap = await tx.get(pRef);
-        if (!pSnap.exists()) throw new Error("Produk tidak ditemukan!");
-
-        const currentStock = Number(pSnap.data()?.stock || 0);
-        const newStock = formData.type === "INCREASE"
-          ? currentStock + formData.qty
-          : currentStock - formData.qty;
-
-        if (formData.type === "DECREASE" && currentStock < formData.qty) {
-          throw new Error(`Stok saat ini (${currentStock}) tidak cukup untuk dikurangi ${formData.qty}!`);
-        }
-
-        tx.update(pRef, {
-          stock: newStock,
-          updatedAt: serverTimestamp(),
-          updatedBy: currentUser.name,
-        });
-
-        tx.set(doc(db, "stock_adjustments", adjId), {
-          adjustmentId: adjId,
-          documentNo: adjId,
-          date: displayDate,
-          sku: formData.sku,
-          itemName: prod.itemName,
-          currentStock: currentStock,
-          adjustmentType: formData.type,
-          adjustmentQty: formData.qty,
-          newStock: newStock,
-          reason: formData.reason.trim(),
-          notes: formData.notes.trim(),
-          user: currentUser.name,
-          status: "COMPLETED",
-          executedBy: currentUser.name,
-          executedAt: serverTimestamp(),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-
-        const mvRef = doc(collection(db, "stock_movements"));
-        tx.set(mvRef, {
-          movementId: mvRef.id,
-          date: displayDate,
-          itemCode: formData.sku,
-          itemNameSnapshot: prod.itemName,
-          type: "ADJUSTMENT",
-          referenceId: adjId,
-          qtyIn: formData.type === "INCREASE" ? formData.qty : 0,
-          qtyOut: formData.type === "DECREASE" ? formData.qty : 0,
-          previousStock: currentStock,
-          newStock: newStock,
-          reason: `${formData.type}: ${formData.reason.trim()}`,
-          user: currentUser.name,
-          timestamp: serverTimestamp(),
-        });
-      });
-
-      setIsAdjModalOpen(false);
-      await createOperationalNotification({
-        eventType: "ADJ_CREATED",
-        documentType: "ADJ",
-        documentId: adjId,
-        documentNo: adjId,
-        actorId: currentUser.id,
-        actorName: currentUser.name,
-      });
-      showAlert(`Penyesuaian stok [${adjId}] berhasil disimpan!`, "Sukses");
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal melakukan penyesuaian stok");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleConfirmInitSop(mode: "GENERAL" | "PARTIAL", partialList: any[], sopNotes: string) {
-    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk menginisialisasi Stock Opname!", "Akses Ditolak");
-    try {
-      setLoading(true);
-      const activeCheck = stockOpnames.find((s) => ["OPEN", "COUNTING", "COUNTING_COMPLETED", "ADJUSTMENT"].includes(s.status));
-      if (activeCheck) {
-        setLoading(false);
-        return showAlert(`Masih ada Stock Opname aktif (${activeCheck.documentNo || activeCheck.sopId}).`);
-      }
-
-      const targetItems = mode === "GENERAL"
-        ? products.filter((p) => p.active === true && p.sku)
-        : partialList;
-
-      if (targetItems.length === 0) {
-        setLoading(false);
-        return showAlert("Tidak ada produk yang dipilih untuk Stock Opname!");
-      }
-
-      const today = new Date();
-      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
-      const displayDate = today.toISOString().split("T")[0];
-
-      const snapshotItems = targetItems.map((p) => ({
-        skuId: p.sku,
-        skuCode: p.sku,
-        itemName: p.itemName,
-        systemQtySnapshot: Number(p.stock || 0),
-        physicalQty: null,
-        isCounted: false,
-        countedBy: "",
-        countedAt: null,
-        adjustmentQty: 0,
-        adjustmentReason: "",
-      }));
-
-      const counterRef = doc(db, "counters", `sop_counter_${dateStr}`);
-      const docNo = await runTransaction(db, async (tx) => {
-        const cSnap = await tx.get(counterRef);
-        const curr = cSnap.exists() ? (cSnap.data().current || 0) : 0;
-        const next = curr + 1;
-        const sopId = `SOP-${dateStr}-${String(next).padStart(3, "0")}`;
-
-        tx.set(counterRef, { current: next, date: dateStr, updatedAt: serverTimestamp() });
-        tx.set(doc(db, "stock_opnames", sopId), {
-          sopId: sopId,
-          documentNo: sopId,
-          opnameDate: displayDate,
-          status: "OPEN",
-          opnameType: mode,
-          initializedBy: currentUser.name,
-          initializedAt: serverTimestamp(),
-          totalSku: snapshotItems.length,
-          items: snapshotItems,
-          notes: sopNotes.trim() || `Inisialisasi SOP ${mode}`,
-          postingId: "",
-          postedBy: "",
-          postedAt: null,
-        });
-
-        const aRef = doc(collection(db, "audit_trails"));
-        tx.set(aRef, {
-          auditId: aRef.id,
-          userId: currentUser.name,
-          role: currentUser.role,
-          action: "INITIALIZE_STOCK_OPNAME",
-          documentId: sopId,
-          documentNo: sopId,
-          reason: `Inisialisasi SOP (${mode}) dengan snapshot ${snapshotItems.length} SKU`,
-          timestamp: serverTimestamp(),
-        });
-        return sopId;
-      });
-
-      setIsInitSopModalOpen(false);
-      await createOperationalNotification({
-        eventType: "SOP_INITIALIZED",
-        documentType: "SOP",
-        documentId: docNo,
-        documentNo: docNo,
-        actorId: currentUser.id,
-        actorName: currentUser.name,
-      });
-      showAlert(`Stock Opname (${mode}) berhasil diinisialisasi: [${docNo}].`);
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal inisialisasi Stock Opname");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSaveSalesOrder(payload: any) {
-    const { editingSoId, selectedCustomer, soItems, shippingRates, shippingCost, courierCode, serviceName } = payload;
-    try {
-      setLoading(true);
-      const today = new Date();
-      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
-      const displayDate = today.toISOString().split("T")[0];
-
-      const subtotal = soItems.reduce((acc: number, it: any) => acc + it.subtotal, 0);
-      const totalWeight = soItems.reduce((acc: number, it: any) => acc + (it.weightInGrams || 0) * it.qty, 0);
-      const grandTotal = subtotal + shippingCost;
-      const addr = selectedCustomer.displayAddress || selectedCustomer.fullAddress || "-";
-
-      if (editingSoId) {
-        await updateDoc(doc(db, "sales_orders", editingSoId), {
-          customerName: selectedCustomer.customerName,
-          phone: selectedCustomer.phone || "-",
-          address: addr,
-          items: soItems,
-          total: grandTotal,
-          totalWeightInGrams: totalWeight,
-          shippingCost: shippingCost,
-          shippingCourier: courierCode,
-          shippingServiceName: serviceName,
-          shippingRatesSnapshot: shippingRates,
-          updatedAt: serverTimestamp(),
-          updatedBy: currentUser.name,
-        });
-        showAlert(`Sales Order [${editingSoId}] berhasil diperbarui!`);
-      } else {
-        const counterRef = doc(db, "counters", "sales_order");
-        const newSoId = await runTransaction(db, async (tx) => {
-          const cSnap = await tx.get(counterRef);
-          const curr = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
-          const next = curr + 1;
-          const generatedSoId = `SO-${dateStr}-${String(next).padStart(5, "0")}`;
-
-          tx.set(counterRef, { currentNumber: next, updatedAt: serverTimestamp() });
-          tx.set(doc(db, "sales_orders", generatedSoId), {
-            soId: generatedSoId,
-            date: displayDate,
-            customerId: selectedCustomer.customerId || selectedCustomer.id || "",
-            customerName: selectedCustomer.customerName,
-            phone: selectedCustomer.phone || "-",
-            address: addr,
-            expedition: serviceName || "Reguler",
-            items: soItems,
-            total: grandTotal,
-            totalWeightInGrams: totalWeight,
-            shippingCost: shippingCost,
-            shippingCourier: courierCode,
-            shippingServiceName: serviceName,
-            shippingRatesSnapshot: shippingRates,
-            status: "CONFIRMED",
-            cancelReason: "",
-            createdBy: currentUser.name,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          return generatedSoId;
-        });
-
-        await createOperationalNotification({
-          eventType: "SO_CONFIRMED",
-          documentType: "SO",
-          documentId: newSoId,
-          documentNo: newSoId,
-          actorId: currentUser.id,
-          actorName: currentUser.name,
-        });
-        showAlert(`Sales Order [${newSoId}] berhasil dibuat (Status: CONFIRMED)!`);
-      }
-
-      setIsSoModalOpen(false);
-      setEditingSoId(null);
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal menyimpan Sales Order");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function executeMarkProcessing() {
-    if (!processingConfirmTarget) return;
-    const so = processingConfirmTarget;
-    setProcessingConfirmTarget(null);
-
-    try {
-      setLoading(true);
-      await updateDoc(doc(db, "sales_orders", so.soId || so.id), {
-        status: "PROCESSING",
-        updatedAt: serverTimestamp(),
-        updatedBy: currentUser.name,
-      });
-      await createOperationalNotification({
-        eventType: "SO_PROCESSING",
-        documentType: "SO",
-        documentId: so.soId,
-        documentNo: so.soId,
-        actorId: currentUser.id,
-        actorName: currentUser.name,
-      });
-      showAlert(`Status SO [${so.soId}] berhasil diubah menjadi PROCESSING!`);
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal mengubah status SO ke Processing");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSaveProcessingExpedition() {
-    if (!targetProcessingSo) return;
-    try {
-      setLoading(true);
-      const subtotalOnly = (targetProcessingSo.items || []).reduce((acc: number, it: any) => acc + (it.subtotal || 0), 0);
-      const newTotal = subtotalOnly + (targetProcessingSo.shippingCost || 0);
-
-      await updateDoc(doc(db, "sales_orders", targetProcessingSo.soId || targetProcessingSo.id), {
-        shippingCost: targetProcessingSo.shippingCost || 0,
-        shippingCourier: targetProcessingSo.shippingCourier || "",
-        shippingServiceName: targetProcessingSo.shippingServiceName || "",
-        expedition: targetProcessingSo.shippingServiceName || "",
-        total: newTotal,
-        updatedAt: serverTimestamp(),
-        updatedBy: currentUser.name,
-      });
-
-      showAlert(`Jasa ekspedisi untuk SO [${targetProcessingSo.soId}] berhasil diubah!`);
-      setIsEditExpeditionModalOpen(false);
-      setTargetProcessingSo(null);
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal mengubah ekspedisi");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleMarkReadyToDeliver(so: any) {
-    if (so.status !== "PROCESSING") return showAlert("Hanya SO berstatus PROCESSING yang bisa diubah ke READY TO DELIVER!");
-    try {
-      setLoading(true);
-      await updateDoc(doc(db, "sales_orders", so.soId || so.id), {
-        status: "READY TO DELIVER",
-        updatedAt: serverTimestamp(),
-        updatedBy: currentUser.name,
-      });
-      await createOperationalNotification({
-        eventType: "SO_READY_TO_DELIVER",
-        documentType: "SO",
-        documentId: so.soId,
-        documentNo: so.soId,
-        actorId: currentUser.id,
-        actorName: currentUser.name,
-      });
-      showAlert(`SO [${so.soId}] berstatus READY TO DELIVER! Siap diterbitkan DO.`);
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal mengubah status ke Ready to Deliver");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleProcessDO(so: any) {
-    if (so.status !== "READY TO DELIVER") return showAlert("Hanya SO berstatus READY TO DELIVER yang bisa diproses ke DO!");
-    try {
-      setLoading(true);
-      const today = new Date();
-      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
-      const displayDate = today.toISOString().split("T")[0];
-
-      const counterRef = doc(db, "counters", "delivery_order");
-      const soRef = doc(db, "sales_orders", so.soId || so.id);
-
-      const doId = await runTransaction(db, async (tx) => {
-        const cSnap = await tx.get(counterRef);
-        const curr = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
-        const next = curr + 1;
-        const generatedDoId = `DO-${dateStr}-${String(next).padStart(5, "0")}`;
-
-        for (const it of so.items || []) {
-          const pRef = doc(db, "products", it.sku);
-          const pSnap = await tx.get(pRef);
-          if (!pSnap.exists()) throw new Error(`Produk ${it.sku} tidak ditemukan!`);
-          const liveStock = pSnap.data().stock || 0;
-          if (liveStock < it.qty) {
-            throw new Error(`Stok produk ${it.itemName} (${it.sku}) tidak cukup! Sisa: ${liveStock}, Butuh: ${it.qty}`);
-          }
-        }
-
-        tx.set(counterRef, { currentNumber: next, updatedAt: serverTimestamp() });
-        for (const it of so.items || []) {
-          const pRef = doc(db, "products", it.sku);
-          const pSnap = await tx.get(pRef);
-          const oldStock = pSnap.data()?.stock || 0;
-          const newStock = oldStock - it.qty;
-
-          tx.update(pRef, { stock: newStock, updatedAt: serverTimestamp(), updatedBy: currentUser.name });
-
-          const mvRef = doc(collection(db, "stock_movements"));
-          tx.set(mvRef, {
-            movementId: mvRef.id,
-            date: displayDate,
-            itemCode: it.sku,
-            itemNameSnapshot: it.itemName,
-            type: "DELIVERY",
-            referenceId: generatedDoId,
-            qtyIn: 0,
-            qtyOut: it.qty,
-            previousStock: oldStock,
-            newStock: newStock,
-            reason: `Pengiriman DO ${generatedDoId} (SO: ${so.soId})`,
-            user: currentUser.name,
-            timestamp: serverTimestamp(),
-          });
-        }
-
-        tx.update(soRef, { status: "DELIVERY ORDER", updatedAt: serverTimestamp(), updatedBy: currentUser.name });
-
-        tx.set(doc(db, "delivery_orders", generatedDoId), {
-          doId: generatedDoId,
-          soId: so.soId || so.id,
-          date: displayDate,
-          expedition: so.expedition || "-",
-          senderName: storeSettings.storeName,
-          senderPhone: storeSettings.storePhone,
-          senderAddress: storeSettings.storeAddress,
-          recipientName: so.customerName || "-",
-          recipientPhone: so.phone || "-",
-          recipientAddress: so.address || "-",
-          totalItems: (so.items || []).length,
-          totalPcs: (so.items || []).reduce((acc: number, it: any) => acc + (it.qty || 1), 0),
-          totalWeightInGrams: so.totalWeightInGrams || 0,
-          shippingCost: so.shippingCost || 0,
-          shippingCourier: so.shippingCourier || "",
-          shippingServiceName: so.shippingServiceName || "",
-          items: so.items || [],
-          isStockDeducted: true,
-          createdBy: currentUser.name,
-          createdAt: serverTimestamp(),
-        });
-        return generatedDoId;
-      });
-
-      await createOperationalNotification({
-        eventType: "DO_CREATED",
-        documentType: "DO",
-        documentId: doId,
-        documentNo: doId,
-        actorId: currentUser.id,
-        actorName: currentUser.name,
-      });
-      showAlert(`Delivery Order [${doId}] berhasil diterbitkan dan stok fisik terpotong!`);
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal memproses Delivery Order.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleCreatePurchaseOrder(payload: any) {
-    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk membuat PO!", "Akses Ditolak");
-    try {
-      setLoading(true);
-      const today = new Date();
-      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
-      const displayDate = today.toISOString().split("T")[0];
-
-      const counterRef = doc(db, "counters", "purchase_order");
-      const generatedPoId = await runTransaction(db, async (tx) => {
-        const cSnap = await tx.get(counterRef);
-        const curr = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
-        const next = curr + 1;
-        const poId = `PO-${dateStr}-${String(next).padStart(5, "0")}`;
-
-        tx.set(counterRef, { currentNumber: next, updatedAt: serverTimestamp() });
-        tx.set(doc(db, "purchase_orders", poId), {
-          poId: poId,
-          documentNo: poId,
-          poDate: displayDate,
-          supplier: payload.supplier.trim(),
-          supplierAddress: payload.address.trim(),
-          supplierPhone: payload.phone.trim(),
-          notes: payload.notes.trim(),
-          status: "OPEN",
-          items: payload.items.map((it: any) => ({
-            sku: it.sku,
-            itemName: it.itemName,
-            qty: Number(it.qty),
-            purchasingPrice: Number(it.purchasingPrice),
-            subtotal: Number(it.subtotal),
-            receivedQty: 0,
-            weightInGrams: Number(it.weightInGrams || 0),
-          })),
-          total: payload.items.reduce((acc: number, it: any) => acc + Number(it.subtotal), 0),
-          createdBy: currentUser.name,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        return poId;
-      });
-
-      setIsCreatePoModalOpen(false);
-      await createOperationalNotification({
-        eventType: "PO_CREATED",
-        documentType: "PO",
-        documentId: generatedPoId,
-        documentNo: generatedPoId,
-        actorId: currentUser.id,
-        actorName: currentUser.name,
-      });
-      showAlert(`Purchase Order [${generatedPoId}] berhasil diterbitkan dengan status OPEN!`, "Sukses");
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal menerbitkan Purchase Order.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleExecuteReceiving(payload: { po: any; receivedMap: Record<string, number>; notes: string }) {
-    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk melakukan receiving!", "Akses Ditolak");
-    try {
-      setLoading(true);
-      const { po, receivedMap, notes } = payload;
-      const today = new Date();
-      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
-      const displayDate = today.toISOString().split("T")[0];
-
-      await runTransaction(db, async (tx) => {
-        const poRef = doc(db, "purchase_orders", po.poId || po.id);
-        const poSnap = await tx.get(poRef);
-        if (!poSnap.exists()) throw new Error("Dokumen PO tidak ditemukan!");
-        const currentPo = poSnap.data();
-
-        const counterRef = doc(db, "counters", `rcv_counter_${dateStr}`);
-        const cSnap = await tx.get(counterRef);
-        const curr = cSnap.exists() ? (cSnap.data().current || 0) : 0;
-        const next = curr + 1;
-        const generatedRcvId = `RCV-${dateStr}-${String(next).padStart(4, "0")}`;
-        tx.set(counterRef, { current: next, date: dateStr, updatedAt: serverTimestamp() });
-
-        const receivedList: any[] = [];
-        let allItemsFullyReceived = true;
-
-        const updatedPoItems = (currentPo.items || []).map((it: any) => {
-          const qtyIn = Number(receivedMap[it.sku] || 0);
-          const currentReceived = Number(it.receivedQty || 0);
-          const newReceivedTotal = currentReceived + qtyIn;
-
-          if (qtyIn > 0) {
-            receivedList.push({
-              sku: it.sku,
-              itemName: it.itemName,
-              qtyReceived: qtyIn,
-              purchasingPrice: it.purchasingPrice || 0,
-            });
-
-            const pRef = doc(db, "products", it.sku);
-            const liveProd = products.find((p) => p.sku === it.sku);
-            const currentStock = Number(liveProd?.stock || 0);
-            const newStock = currentStock + qtyIn;
-
-            tx.update(pRef, {
-              stock: newStock,
-              lastReceiving: displayDate,
-              updatedAt: serverTimestamp(),
-              updatedBy: currentUser.name,
-            });
-
-            const mvRef = doc(collection(db, "stock_movements"));
-            tx.set(mvRef, {
-              movementId: mvRef.id,
-              date: displayDate,
-              itemCode: it.sku,
-              itemNameSnapshot: it.itemName,
-              type: "RECEIVING",
-              referenceId: generatedRcvId,
-              qtyIn: qtyIn,
-              qtyOut: 0,
-              previousStock: currentStock,
-              newStock: newStock,
-              reason: `Penerimaan Barang RCV ${generatedRcvId} (PO: ${po.poId})`,
-              user: currentUser.name,
-              timestamp: serverTimestamp(),
-            });
-          }
-
-          if (newReceivedTotal < Number(it.qty || 0)) {
-            allItemsFullyReceived = false;
-          }
-
-          return { ...it, receivedQty: newReceivedTotal };
-        });
-
-        const newPoStatus = allItemsFullyReceived ? "COMPLETED" : "PARTIAL";
-
-        tx.update(poRef, {
-          items: updatedPoItems,
-          status: newPoStatus,
-          ...(allItemsFullyReceived ? { completedAt: serverTimestamp() } : {}),
-          updatedAt: serverTimestamp(),
-          updatedBy: currentUser.name,
-        });
-
-        const rcvDocRef = doc(db, "receivings", generatedRcvId);
-        tx.set(rcvDocRef, {
-          receivingId: generatedRcvId,
-          documentNo: generatedRcvId,
-          poId: po.poId || po.documentNo,
-          date: displayDate,
-          supplier: po.supplier || "-",
-          items: receivedList,
-          notes: notes.trim(),
-          createdBy: currentUser.name,
-          createdAt: serverTimestamp(),
-        });
-      });
-
-      setIsReceivingModalOpen(false);
-      setSelectedPoForReceiving(null);
-      await createOperationalNotification({
-        eventType: "RECEIVING_CREATED",
-        documentType: "RECEIVING",
-        documentId: payload.po.poId,
-        documentNo: payload.po.poId,
-        actorId: currentUser.id,
-        actorName: currentUser.name,
-      });
-      showAlert(`Barang berhasil diterima dan dicatat dalam riwayat receiving!`, "Sukses");
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal memproses penerimaan barang.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function executeCancelSop() {
-    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk membatalkan Stock Opname!", "Akses Ditolak");
-    if (!sopCancelTarget) return;
-    if (!sopCancelReason.trim()) return showAlert("Alasan pembatalan Stock Opname wajib diisi!");
-    setIsSopCancelConfirmOpen(false);
-
-    try {
-      setLoading(true);
-      const sopDocId = sopCancelTarget.documentNo || sopCancelTarget.sopId || sopCancelTarget.id;
-      await runTransaction(db, async (tx) => {
-        tx.update(doc(db, "stock_opnames", sopDocId), {
-          status: "CANCELLED",
-          cancelReason: sopCancelReason.trim(),
-          cancelledBy: currentUser.name,
-          cancelledAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        const aRef = doc(collection(db, "audit_trails"));
-        tx.set(aRef, {
-          auditId: aRef.id,
-          userId: currentUser.name,
-          role: currentUser.role,
-          action: "CANCEL_STOCK_OPNAME",
-          documentId: sopDocId,
-          documentNo: sopDocId,
-          reason: `Stock Opname dibatalkan: ${sopCancelReason.trim()}`,
-          timestamp: serverTimestamp(),
-        });
-      });
-      showAlert(`Stock Opname [${sopDocId}] berhasil dibatalkan.`);
-      setSopCancelTarget(null);
-      setSopCancelReason("");
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal membatalkan Stock Opname");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function executeCancelPo() {
-    if (isStaff) return showAlert("Staff tidak memiliki hak akses untuk membatalkan PO!", "Akses Ditolak");
-    if (!poCancelTarget) return;
-    if (!poCancelReason.trim()) return showAlert("Alasan pembatalan PO wajib diisi!");
-    setIsPoCancelConfirmOpen(false);
-
-    try {
-      setLoading(true);
-      const poDocId = poCancelTarget.poId || poCancelTarget.id;
-      await updateDoc(doc(db, "purchase_orders", poDocId), {
-        status: "CANCELLED",
-        cancelReason: poCancelReason.trim(),
-        cancelledBy: currentUser.name,
-        cancelledAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      showAlert(`Purchase Order [${poDocId}] berhasil dibatalkan.`);
-      setPoCancelTarget(null);
-      setPoCancelReason("");
-      loadAllData();
-    } catch (err: any) {
-      showAlert(err.message || "Gagal membatalkan PO");
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  // Filtered
   const displayedSalesOrders = useMemo(() => {
     return salesOrders.filter((so) => {
       const matchesStatus = soStatusFilter === "ALL" || (so.status || "").toUpperCase() === soStatusFilter;
       if (!matchesStatus) return false;
-
       if (!soSearchQuery.trim()) return true;
       const q = soSearchQuery.toLowerCase();
-      const name = String(so.customerName || so.customer?.name || so.customer?.fullName || "").toLowerCase();
-      const addr = String(so.shippingAddress || so.address || so.customer?.address || "").toLowerCase();
-      const soNo = String(so.soNumber || so.documentNo || so.id || "").toLowerCase();
+      const name = String(so.customerName || so.customer?.name || "").toLowerCase();
+      const addr = String(so.shippingAddress || so.address || "").toLowerCase();
+      const soNo = String(so.soNumber || so.documentNo || so.id || so.soId || "").toLowerCase();
       return name.includes(q) || addr.includes(q) || soNo.includes(q);
     });
   }, [salesOrders, soStatusFilter, soSearchQuery]);
@@ -1539,8 +464,867 @@ export default function Page() {
     return stockMovements.filter((m) => m.itemCode === selectedProductLedger.sku);
   }, [stockMovements, selectedProductLedger]);
 
+  // Load Wilayah Indonesia
+  useEffect(() => {
+    if (currentTab === "settings" && provinces.length === 0) {
+      setLoadingRegion(true);
+      fetch("/api/regions")
+        .then((res) => res.json())
+        .then((data) => { if (Array.isArray(data)) setProvinces(data); })
+        .catch((err) => console.error("Gagal load provinsi:", err))
+        .finally(() => setLoadingRegion(false));
+    }
+  }, [currentTab, provinces.length]);
+
+  async function handleProvinceChange(pCode: string) {
+    const prov = provinces.find((p) => p.id === pCode);
+    setStoreSettings((prev) => ({
+      ...prev,
+      provinceCode: pCode,
+      provinceName: prov?.name || "",
+      regencyCode: "",
+      regencyName: "",
+      districtCode: "",
+      districtName: "",
+      villageCode: "",
+      villageName: "",
+    }));
+    setRegencies([]);
+    setDistricts([]);
+    setVillages([]);
+    if (!pCode) return;
+    setLoadingRegion(true);
+    try {
+      const res = await fetch(`/api/regions?type=regencies&code=${pCode}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setRegencies(data);
+    } finally { setLoadingRegion(false); }
+  }
+
+  async function handleRegencyChange(rCode: string) {
+    const reg = regencies.find((r) => r.id === rCode);
+    setStoreSettings((prev) => ({
+      ...prev,
+      regencyCode: rCode,
+      regencyName: reg?.name || "",
+      districtCode: "",
+      districtName: "",
+      villageCode: "",
+      villageName: "",
+    }));
+    setDistricts([]);
+    setVillages([]);
+    if (!rCode) return;
+    setLoadingRegion(true);
+    try {
+      const res = await fetch(`/api/regions?type=districts&code=${rCode}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setDistricts(data);
+    } finally { setLoadingRegion(false); }
+  }
+
+  async function handleDistrictChange(dCode: string) {
+    const dist = districts.find((d) => d.id === dCode);
+    setStoreSettings((prev) => ({
+      ...prev,
+      districtCode: dCode,
+      districtName: dist?.name || "",
+      villageCode: "",
+      villageName: "",
+    }));
+    setVillages([]);
+    if (!dCode) return;
+    setLoadingRegion(true);
+    try {
+      const res = await fetch(`/api/regions?type=villages&code=${dCode}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setVillages(data);
+    } finally { setLoadingRegion(false); }
+  }
+
+  function handleVillageChange(vCode: string) {
+    const vil = villages.find((v) => v.id === vCode);
+    setStoreSettings((prev) => ({
+      ...prev,
+      villageCode: vCode,
+      villageName: vil?.name || "",
+    }));
+  }
+
+  async function handleSaveStoreAddress(e: React.FormEvent) {
+    e.preventDefault();
+    if (!storeSettings.provinceName || !storeSettings.regencyName || !storeSettings.districtName || !storeSettings.villageName) {
+      return showAlert("Harap lengkapi pemilihan Provinsi, Kabupaten/Kota, Kecamatan, dan Desa/Kelurahan!", "Peringatan");
+    }
+    const fullAddr = `${storeSettings.detailAddress ? storeSettings.detailAddress.trim() + ", " : ""}Desa/Kel. ${storeSettings.villageName}, Kec. ${storeSettings.districtName}, ${storeSettings.regencyName}, ${storeSettings.provinceName}${storeSettings.postalCode ? " " + storeSettings.postalCode : ""}`;
+
+    try {
+      setLoading(true);
+      await setDoc(doc(db, "settings", "store_info"), {
+        ...storeSettings,
+        storeAddress: fullAddr,
+        updatedAt: serverTimestamp(),
+        updatedBy: currentUser.name,
+      }, { merge: true });
+      setStoreSettings((prev) => ({ ...prev, storeAddress: fullAddr }));
+      showAlert("Alamat resmi toko berhasil disimpan!", "Sukses");
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menyimpan alamat toko");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleTestApiKey() {
+    if (!inputApiKey.trim()) return showAlert("Masukkan API Key terlebih dahulu!", "Peringatan");
+    setIsTestingApiKey(true);
+    setApiKeyTestedSuccess(false);
+    setTestedToken(null);
+    try {
+      const res = await fetch("/api/shipping/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "TEST_CONNECTION", apiKey: inputApiKey.trim(), userRole: currentUser.role }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTestedToken(data.token);
+        setIsApiSuccessModalOpen(true);
+      } else {
+        showAlert(data.message || "API Key tidak bekerja. Periksa kembali kunci Anda.", "Gagal Terhubung");
+      }
+    } catch (e: any) {
+      showAlert("Terjadi kendala jaringan saat menghubungi server pengujian.", "Error");
+    } finally {
+      setIsTestingApiKey(false);
+    }
+  }
+
+  async function handleConfirmAndSaveApiKey() {
+    if (!apiKeyTestedSuccess || !testedToken) return showAlert("API Key harus diuji terlebih dahulu!", "Peringatan");
+    setIsSavingApiKey(true);
+    try {
+      const res = await fetch("/api/shipping/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "CONFIRM_AND_SAVE", apiKey: inputApiKey.trim(), userRole: currentUser.role, token: testedToken }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showAlert("Perubahan API Key RajaOngkir berhasil disimpan!", "Sukses");
+        setStoreSettings((prev) => ({ ...prev, rajaOngkirApiKey: inputApiKey.trim() }));
+        setApiKeyTestedSuccess(false);
+        setTestedToken(null);
+        loadAllData();
+      } else {
+        showAlert(data.message || "Gagal menyimpan API Key.", "Error");
+      }
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menghubungi server", "Error");
+    } finally {
+      setIsSavingApiKey(false);
+    }
+  }
+
+  // Web Bluetooth Direct ESC/POS Label Printing
+  async function handleScanBluetoothPrinter() {
+    if (typeof navigator === "undefined" || !(navigator as any).bluetooth) {
+      return showAlert("Browser tidak mendukung Web Bluetooth API. Gunakan browser Google Chrome di PC/Laptop dengan Bluetooth aktif.", "Bluetooth Error");
+    }
+    try {
+      setBtStatus("Mencari Printer Bluetooth...");
+      const device = await (navigator as any).bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb", "49535343-fe7d-4ae5-8fa9-9fafd205e455", "e7810a71-73ae-499d-8c15-faa9aef0c3f2"],
+      });
+      setBtPrintDevice(device);
+      setBtStatus(`Terhubung: ${device.name || "Bluetooth Printer"}`);
+      setStoreSettings((prev) => ({ ...prev, btPrinterDeviceName: device.name || "Bluetooth Printer" }));
+      showAlert(`Printer Bluetooth [${device.name || "Unknown Printer"}] berhasil terhubung!`, "Sukses");
+    } catch (e: any) {
+      setBtStatus("Koneksi Bluetooth Dibatalkan / Gagal");
+    }
+  }
+
+  async function handlePrintDoLabel(d: any) {
+    const today = new Date().toLocaleDateString("id-ID");
+    const encoder = new TextEncoder();
+
+    const INIT = [0x1b, 0x40];
+    const ALIGN_CENTER = [0x1b, 0x61, 0x01];
+    const ALIGN_LEFT = [0x1b, 0x61, 0x00];
+    const BOLD_ON = [0x1b, 0x45, 0x01];
+    const BOLD_OFF = [0x1b, 0x45, 0x00];
+    const DOUBLE_SIZE = [0x1d, 0x21, 0x11];
+    const NORMAL_SIZE = [0x1d, 0x21, 0x00];
+    const FEED_3 = [0x1b, 0x64, 0x03];
+
+    let commands: number[] = [];
+    commands.push(...INIT);
+    commands.push(...ALIGN_CENTER);
+    commands.push(...BOLD_ON);
+    commands.push(...encoder.encode("Atin's Collection\n"));
+    commands.push(...BOLD_OFF);
+    commands.push(...encoder.encode("Banjaran, Kab. Bandung\n\n"));
+    commands.push(...DOUBLE_SIZE);
+    commands.push(...BOLD_ON);
+    commands.push(...encoder.encode("DELIVERI ORDER\n\n"));
+    commands.push(...NORMAL_SIZE);
+    commands.push(...BOLD_OFF);
+
+    commands.push(...ALIGN_LEFT);
+    commands.push(...BOLD_ON);
+    commands.push(...encoder.encode("NOMOR DELIVERY ORDER\n"));
+    commands.push(...BOLD_OFF);
+    commands.push(...encoder.encode(`${d.doId}\n\n`));
+
+    commands.push(...BOLD_ON);
+    commands.push(...encoder.encode("PENGIRIM\n"));
+    commands.push(...BOLD_OFF);
+    commands.push(...encoder.encode("Atin's Collection\n"));
+    commands.push(...BOLD_ON);
+    commands.push(...encoder.encode("NO HANDPHONE\n"));
+    commands.push(...BOLD_OFF);
+    commands.push(...encoder.encode(`${storeSettings.storePhone || "0899-7884-435"}\n\n`));
+
+    commands.push(...BOLD_ON);
+    commands.push(...encoder.encode("PENERIMA\n"));
+    commands.push(...BOLD_OFF);
+    commands.push(...encoder.encode(`${d.recipientName}\n`));
+    commands.push(...BOLD_ON);
+    commands.push(...encoder.encode("NO HANDPHONE\n"));
+    commands.push(...BOLD_OFF);
+    commands.push(...encoder.encode(`${d.recipientPhone || "-"}\n`));
+    commands.push(...BOLD_ON);
+    commands.push(...encoder.encode("ALAMAT\n"));
+    commands.push(...BOLD_OFF);
+    commands.push(...encoder.encode(`${d.recipientAddress}\n\n`));
+
+    commands.push(...BOLD_ON);
+    commands.push(...encoder.encode("Reff SO : "));
+    commands.push(...BOLD_OFF);
+    commands.push(...encoder.encode(`${d.soId}\n`));
+
+    commands.push(...BOLD_ON);
+    commands.push(...encoder.encode("TANGGAL CETAK : "));
+    commands.push(...BOLD_OFF);
+    commands.push(...encoder.encode(`${today}\n`));
+
+    commands.push(...BOLD_ON);
+    commands.push(...encoder.encode("OLEH : "));
+    commands.push(...BOLD_OFF);
+    commands.push(...encoder.encode(`${currentUser.name}\n`));
+
+    commands.push(...FEED_3);
+
+    if (btPrintDevice && btPrintDevice.gatt) {
+      try {
+        setLoading(true);
+        const server = await btPrintDevice.gatt.connect();
+        const services = await server.getPrimaryServices();
+        let writeChar: any = null;
+        for (const s of services) {
+          const chars = await s.getCharacteristics();
+          for (const c of chars) {
+            if (c.properties.write || c.properties.writeWithoutResponse) {
+              writeChar = c;
+              break;
+            }
+          }
+          if (writeChar) break;
+        }
+
+        if (writeChar) {
+          const data = new Uint8Array(commands);
+          await writeChar.writeValue(data);
+          showAlert(`Label DO [${d.doId}] berhasil dicetak langsung ke printer Bluetooth!`, "Sukses");
+          return;
+        }
+      } catch (err: any) {
+        console.warn("Direct Bluetooth print error:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    showAlert("Printer Bluetooth belum terhubung! Silakan buka menu Pengaturan -> Hardware Printer Thermal Bluetooth, lalu tekan 'Cari Printer Bluetooth' untuk menghubungkannya.", "Printer Belum Siap");
+  }
+
+  // SO Handlers
+  async function executeCancelSo() {
+    if (!soCancelTarget) return;
+    if (!soCancelReason.trim()) return showAlert("Alasan pembatalan SO wajib diisi!", "Peringatan");
+    try {
+      setLoading(true);
+      const targetId = soCancelTarget.soId || soCancelTarget.id;
+      await updateDoc(doc(db, "sales_orders", targetId), {
+        status: "CANCELLED",
+        cancelReason: soCancelReason.trim(),
+        cancelledAt: serverTimestamp(),
+        cancelledBy: currentUser.name,
+        updatedAt: serverTimestamp(),
+      });
+      setIsSoCancelConfirmOpen(false);
+      setIsSoDetailModalOpen(false);
+      setSoCancelTarget(null);
+      setSoCancelReason("");
+      showAlert(`Sales Order [${targetId}] berhasil dibatalkan.`, "Sukses");
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal membatalkan Sales Order");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function executeMarkProcessing(so: any) {
+    try {
+      setLoading(true);
+      await updateDoc(doc(db, "sales_orders", so.soId || so.id), {
+        status: "PROCESSING",
+        updatedAt: serverTimestamp(),
+        updatedBy: currentUser.name,
+      });
+      setIsSoDetailModalOpen(false);
+      showAlert(`Status SO [${so.soId}] diubah ke PROCESSING!`);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal mengubah status SO");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleMarkReadyToDeliver(so: any) {
+    try {
+      setLoading(true);
+      await updateDoc(doc(db, "sales_orders", so.soId || so.id), {
+        status: "READY TO DELIVER",
+        updatedAt: serverTimestamp(),
+        updatedBy: currentUser.name,
+      });
+      setIsSoDetailModalOpen(false);
+      showAlert(`SO [${so.soId}] berstatus READY TO DELIVER! Siap diterbitkan DO.`);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal mengubah status SO");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleProcessDO(so: any) {
+    try {
+      setLoading(true);
+      const today = new Date();
+      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
+      const displayDate = today.toISOString().split("T")[0];
+
+      const counterRef = doc(db, "counters", "delivery_order");
+      const soRef = doc(db, "sales_orders", so.soId || so.id);
+
+      const doId = await runTransaction(db, async (tx) => {
+        const cSnap = await tx.get(counterRef);
+        const curr = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
+        const next = curr + 1;
+        const generatedDoId = `DO-${dateStr}-${String(next).padStart(5, "0")}`;
+
+        for (const it of so.items || []) {
+          const pRef = doc(db, "products", it.sku);
+          const pSnap = await tx.get(pRef);
+          if (!pSnap.exists()) throw new Error(`Produk ${it.sku} tidak ditemukan!`);
+          const liveStock = pSnap.data().stock || 0;
+          if (liveStock < (it.qty || it.quantity || 1)) {
+            throw new Error(`Stok produk ${it.itemName} (${it.sku}) tidak cukup! Sisa: ${liveStock}`);
+          }
+        }
+
+        tx.set(counterRef, { currentNumber: next, updatedAt: serverTimestamp() });
+        for (const it of so.items || []) {
+          const pRef = doc(db, "products", it.sku);
+          const pSnap = await tx.get(pRef);
+          const oldStock = pSnap.data()?.stock || 0;
+          const dedQty = Number(it.qty || it.quantity || 1);
+          const newStock = oldStock - dedQty;
+
+          tx.update(pRef, { stock: newStock, updatedAt: serverTimestamp(), updatedBy: currentUser.name });
+
+          const mvRef = doc(collection(db, "stock_movements"));
+          tx.set(mvRef, {
+            movementId: mvRef.id,
+            date: displayDate,
+            itemCode: it.sku,
+            itemNameSnapshot: it.itemName,
+            type: "DELIVERY",
+            referenceId: generatedDoId,
+            qtyIn: 0,
+            qtyOut: dedQty,
+            previousStock: oldStock,
+            newStock: newStock,
+            reason: `Pengiriman DO ${generatedDoId} (SO: ${so.soId})`,
+            user: currentUser.name,
+            timestamp: serverTimestamp(),
+          });
+        }
+
+        tx.update(soRef, { status: "DELIVERY ORDER", updatedAt: serverTimestamp(), updatedBy: currentUser.name });
+
+        tx.set(doc(db, "delivery_orders", generatedDoId), {
+          doId: generatedDoId,
+          soId: so.soId || so.id,
+          date: displayDate,
+          expedition: so.expedition || so.shippingServiceName || "-",
+          senderName: storeSettings.storeName,
+          senderPhone: storeSettings.storePhone,
+          senderAddress: storeSettings.storeAddress,
+          recipientName: so.customerName || "-",
+          recipientPhone: so.phone || "-",
+          recipientAddress: so.address || "-",
+          totalItems: (so.items || []).length,
+          totalPcs: (so.items || []).reduce((acc: number, it: any) => acc + (Number(it.qty || it.quantity) || 1), 0),
+          totalWeightInGrams: so.totalWeightInGrams || 0,
+          shippingCost: so.shippingCost || 0,
+          shippingCourier: so.shippingCourier || "",
+          shippingServiceName: so.shippingServiceName || "",
+          items: so.items || [],
+          isStockDeducted: true,
+          createdBy: currentUser.name,
+          createdAt: serverTimestamp(),
+          status: "DELIVERED",
+        });
+        return generatedDoId;
+      });
+
+      setIsSoDetailModalOpen(false);
+      showAlert(`Delivery Order [${doId}] berhasil diterbitkan dan stok fisik gudang terpotong!`, "Sukses");
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal memproses Delivery Order.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // DO Cancellation
+  async function executeCancelDo() {
+    if (!isRootAdmin) return showAlert("Hanya ROOT ADMIN yang berhak membatalkan Delivery Order (DO)!", "Akses Ditolak");
+    if (!doCancelTarget) return;
+    if (!doCancelReason.trim()) return showAlert("Alasan pembatalan DO wajib diisi!", "Peringatan");
+
+    try {
+      setLoading(true);
+      const today = new Date();
+      const displayDate = today.toISOString().split("T")[0];
+      const doTargetId = doCancelTarget.doId || doCancelTarget.id;
+
+      await runTransaction(db, async (tx) => {
+        const doRef = doc(db, "delivery_orders", doTargetId);
+        const doSnap = await tx.get(doRef);
+        if (!doSnap.exists()) throw new Error("Dokumen DO tidak ditemukan!");
+
+        for (const it of doCancelTarget.items || []) {
+          const pRef = doc(db, "products", it.sku);
+          const pSnap = await tx.get(pRef);
+          if (pSnap.exists()) {
+            const curStock = Number(pSnap.data().stock || 0);
+            const returnedQty = Number(it.qty || it.quantity || 1);
+            const restoredStock = curStock + returnedQty;
+
+            tx.update(pRef, { stock: restoredStock, updatedAt: serverTimestamp(), updatedBy: currentUser.name });
+
+            const mvRef = doc(collection(db, "stock_movements"));
+            tx.set(mvRef, {
+              movementId: mvRef.id,
+              date: displayDate,
+              itemCode: it.sku,
+              itemNameSnapshot: it.itemName,
+              type: "ADJUSTMENT",
+              referenceId: `CANCEL-${doTargetId}`,
+              qtyIn: returnedQty,
+              qtyOut: 0,
+              previousStock: curStock,
+              newStock: restoredStock,
+              reason: `Pembatalan DO ${doTargetId}: ${doCancelReason.trim()}`,
+              user: currentUser.name,
+              timestamp: serverTimestamp(),
+            });
+          }
+        }
+
+        tx.update(doRef, {
+          status: "CANCELLED",
+          cancelReason: doCancelReason.trim(),
+          cancelledBy: currentUser.name,
+          cancelledAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        if (doCancelTarget.soId) {
+          const soRef = doc(db, "sales_orders", doCancelTarget.soId);
+          tx.update(soRef, {
+            status: "READY TO DELIVER",
+            updatedAt: serverTimestamp(),
+            updatedBy: currentUser.name,
+          });
+        }
+      });
+
+      setIsDoCancelConfirmOpen(false);
+      setDoCancelTarget(null);
+      setDoCancelReason("");
+      showAlert(`DO [${doTargetId}] berhasil dibatalkan. Stok barang telah dipulihkan!`, "Sukses");
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal membatalkan Delivery Order");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Stock Opname Review Flow
+  function handleOpenSopReview(sop: any) {
+    setReviewSopTarget(sop);
+    setReviewItemsData(JSON.parse(JSON.stringify(sop.items || [])));
+    setIsSopReviewModalOpen(true);
+  }
+
+  function handleExportSopReviewExcel() {
+    if (!reviewSopTarget) return;
+    const dateStr = reviewSopTarget.opnameDate || new Date().toISOString().split("T")[0];
+    const headers = ["date", "itemcode", "itemname", "qty asal", "qty hitung", "qty value", "qty variance", "counted by"];
+    const rows = reviewItemsData.map((it: any) => {
+      const orig = Number(it.systemQtySnapshot || 0);
+      const phys = it.physicalQty != null ? Number(it.physicalQty) : orig;
+      const variance = phys - orig;
+      return [
+        dateStr,
+        it.skuCode || it.skuId,
+        it.itemName,
+        orig,
+        phys,
+        phys,
+        variance,
+        it.countedBy || currentUser.name,
+      ];
+    });
+    downloadExcel(reviewSopTarget.documentNo || reviewSopTarget.sopId, "SOP_Review", headers, rows);
+  }
+
+  async function handleConfirmPostStockOpname() {
+    if (!reviewSopTarget) return;
+    try {
+      setLoading(true);
+      const today = new Date();
+      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
+      const displayDate = today.toISOString().split("T")[0];
+
+      const srvwId = `SRVW-${dateStr}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+      const postId = `POST-${dateStr}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+
+      await runTransaction(db, async (tx) => {
+        const sopRef = doc(db, "stock_opnames", reviewSopTarget.documentNo || reviewSopTarget.sopId || reviewSopTarget.id);
+
+        for (const it of reviewItemsData) {
+          const pRef = doc(db, "products", it.skuCode || it.skuId);
+          const pSnap = await tx.get(pRef);
+          if (pSnap.exists()) {
+            const currentStock = Number(pSnap.data().stock || 0);
+            const physical = Number(it.physicalQty ?? currentStock);
+            const diff = physical - currentStock;
+
+            tx.update(pRef, { stock: physical, updatedAt: serverTimestamp(), updatedBy: currentUser.name });
+
+            if (diff !== 0) {
+              const mvRef = doc(collection(db, "stock_movements"));
+              tx.set(mvRef, {
+                movementId: mvRef.id,
+                date: displayDate,
+                itemCode: it.skuCode || it.skuId,
+                itemNameSnapshot: it.itemName,
+                type: "ADJUSTMENT",
+                referenceId: postId,
+                qtyIn: diff > 0 ? diff : 0,
+                qtyOut: diff < 0 ? Math.abs(diff) : 0,
+                previousStock: currentStock,
+                newStock: physical,
+                reason: `Stock Opname Posting ${postId} (Review: ${srvwId})`,
+                user: currentUser.name,
+                timestamp: serverTimestamp(),
+              });
+            }
+          }
+        }
+
+        tx.update(sopRef, {
+          status: "POSTED",
+          items: reviewItemsData,
+          reviewDocumentNo: srvwId,
+          postingId: postId,
+          postedBy: currentUser.name,
+          postedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+      setIsSopReviewModalOpen(false);
+      setReviewSopTarget(null);
+      showAlert(`Stock Opname berhasil diposting! Review: [${srvwId}], Posting: [${postId}].`, "Sukses");
+      loadAllData();
+    } catch (e: any) {
+      showAlert(e.message || "Gagal memposting Stock Opname");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Staff CRUD Handlers (Auto-increment ST-xx)
+  async function handleOpenAddStaff() {
+    if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak menambahkan staff!", "Akses Ditolak");
+    try {
+      setLoading(true);
+      const cSnap = await runTransaction(db, async (tx) => {
+        const counterRef = doc(db, "counters", "staff");
+        const snap = await tx.get(counterRef);
+        const curr = snap.exists() ? (snap.data().currentNumber || 0) : 0;
+        return curr + 1;
+      });
+      const generatedStaffId = `ST-${String(cSnap).padStart(2, "0")}`;
+      setStaffForm({ staffId: generatedStaffId, fullName: "", userId: "", password: "" });
+      setStaffModalMode("create");
+      setIsStaffModalOpen(true);
+    } catch (err: any) {
+      const fallbackId = `ST-${String(usersList.length + 1).padStart(2, "0")}`;
+      setStaffForm({ staffId: fallbackId, fullName: "", userId: "", password: "" });
+      setStaffModalMode("create");
+      setIsStaffModalOpen(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSaveStaff(e: React.FormEvent) {
+    e.preventDefault();
+    if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak mengubah staff!", "Akses Ditolak");
+    if (!staffForm.fullName.trim() || !staffForm.userId.trim() || !staffForm.password.trim()) {
+      return showAlert("Seluruh kolom wajib diisi!", "Peringatan");
+    }
+
+    try {
+      setLoading(true);
+      const cleanUserId = staffForm.userId.trim().toLowerCase();
+
+      if (staffModalMode === "create") {
+        const counterRef = doc(db, "counters", "staff");
+        await runTransaction(db, async (tx) => {
+          const snap = await tx.get(counterRef);
+          const curr = snap.exists() ? (snap.data().currentNumber || 0) : 0;
+          tx.set(counterRef, { currentNumber: curr + 1, updatedAt: serverTimestamp() }, { merge: true });
+
+          const userDocRef = doc(db, "users", cleanUserId);
+          tx.set(userDocRef, {
+            staffId: staffForm.staffId,
+            userId: cleanUserId,
+            username: cleanUserId,
+            fullName: staffForm.fullName.trim(),
+            name: staffForm.fullName.trim(),
+            password: staffForm.password,
+            role: "Staff Gudang",
+            active: true,
+            createdAt: serverTimestamp(),
+            createdBy: currentUser.name,
+          });
+        });
+        showAlert(`Staff baru [${staffForm.staffId} - ${cleanUserId}] berhasil ditambahkan!`, "Sukses");
+      } else {
+        await updateDoc(doc(db, "users", cleanUserId), {
+          fullName: staffForm.fullName.trim(),
+          name: staffForm.fullName.trim(),
+          password: staffForm.password,
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.name,
+        });
+        showAlert(`Data staff [${cleanUserId}] berhasil diperbarui!`, "Sukses");
+      }
+
+      setIsStaffModalOpen(false);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menyimpan data staff");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteStaff(u: any) {
+    if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak menghapus staff!", "Akses Ditolak");
+    if (u.userId === "admin" || String(u.role).toLowerCase().includes("root")) {
+      return showAlert("Root Administrator tidak dapat dihapus!", "Akses Ditolak");
+    }
+    if (!confirm(`Hapus/nonaktifkan akun staff ${u.fullName} (${u.userId})?`)) return;
+
+    try {
+      setLoading(true);
+      await deleteDoc(doc(db, "users", u.id || u.userId));
+      showAlert(`Akun staff [${u.userId}] berhasil dihapus.`, "Sukses");
+      loadAllData();
+    } catch (e: any) {
+      showAlert(e.message || "Gagal menghapus akun staff");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Supplier CRUD Handlers
+  async function handleOpenAddSupplier() {
+    if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak mengelola supplier!", "Akses Ditolak");
+    setEditingSupplier(null);
+    setIsSupplierModalOpen(true);
+  }
+
+  async function handleSaveSupplier(formData: any) {
+    if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak mengelola supplier!", "Akses Ditolak");
+    try {
+      setLoading(true);
+      if (editingSupplier && (editingSupplier.supplierId || editingSupplier.id)) {
+        const suppKey = editingSupplier.supplierId || editingSupplier.id;
+        await updateDoc(doc(db, "suppliers", suppKey), {
+          supplierName: formData.supplierName.trim(),
+          phone: formData.phone.trim(),
+          address: formData.address.trim(),
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.name,
+        });
+        showAlert(`Supplier [${suppKey}] berhasil diperbarui!`, "Sukses");
+      } else {
+        const counterRef = doc(db, "counters", "supplier");
+        const newSuppId = await runTransaction(db, async (tx) => {
+          const cSnap = await tx.get(counterRef);
+          const curr = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
+          const next = curr + 1;
+          const genId = `SUPP-${String(next).padStart(4, "0")}`;
+          tx.set(counterRef, { currentNumber: next, updatedAt: serverTimestamp() }, { merge: true });
+          tx.set(doc(db, "suppliers", genId), {
+            supplierId: genId,
+            documentNo: genId,
+            supplierName: formData.supplierName.trim(),
+            phone: formData.phone.trim(),
+            address: formData.address.trim(),
+            active: true,
+            createdAt: serverTimestamp(),
+            createdBy: currentUser.name,
+          });
+          return genId;
+        });
+        showAlert(`Supplier baru [${newSuppId}] berhasil didaftarkan!`, "Sukses");
+      }
+      setIsSupplierModalOpen(false);
+      setEditingSupplier(null);
+      loadAllData();
+    } catch (e: any) {
+      showAlert(e.message || "Gagal menyimpan supplier");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteSupplier(s: any) {
+    if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak menghapus supplier!", "Akses Ditolak");
+    if (!confirm(`Hapus data supplier ${s.supplierName} (${s.supplierId || s.id})?`)) return;
+    try {
+      setLoading(true);
+      await deleteDoc(doc(db, "suppliers", s.id || s.supplierId));
+      showAlert(`Supplier [${s.supplierName}] berhasil dihapus.`);
+      loadAllData();
+    } catch (e: any) {
+      showAlert(e.message || "Gagal menghapus supplier");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Customer CRUD Handlers (CUST-XXXX)
+  async function handleSaveCustomer(e: React.FormEvent) {
+    e.preventDefault();
+    if (!customerForm.customerName.trim()) return showAlert("Nama Customer wajib diisi!");
+    try {
+      setLoading(true);
+      if (customerModalMode === "create") {
+        const counterRef = doc(db, "counters", "customer");
+        const nextCustId = await runTransaction(db, async (tx) => {
+          const cSnap = await tx.get(counterRef);
+          const curr = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
+          const next = curr + 1;
+          const genId = `CUST-${String(next).padStart(4, "0")}`;
+          tx.set(counterRef, { currentNumber: next, updatedAt: serverTimestamp() }, { merge: true });
+          tx.set(doc(db, "customers", genId), {
+            customerId: genId,
+            customerName: customerForm.customerName.trim(),
+            phone: customerForm.phone.trim(),
+            email: customerForm.email.trim(),
+            address: customerForm.address.trim(),
+            displayAddress: customerForm.displayAddress.trim() || customerForm.address.trim(),
+            createdAt: serverTimestamp(),
+            createdBy: currentUser.name,
+          });
+          return genId;
+        });
+        showAlert(`Customer baru [${nextCustId}] berhasil ditambahkan!`, "Sukses");
+      } else {
+        await updateDoc(doc(db, "customers", customerForm.customerId), {
+          customerName: customerForm.customerName.trim(),
+          phone: customerForm.phone.trim(),
+          email: customerForm.email.trim(),
+          address: customerForm.address.trim(),
+          displayAddress: customerForm.displayAddress.trim() || customerForm.address.trim(),
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.name,
+        });
+        showAlert(`Data customer [${customerForm.customerId}] berhasil diperbarui!`, "Sukses");
+      }
+      setIsCustomerModalOpen(false);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menyimpan customer");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteCustomer(cust: any) {
+    if (!confirm(`Hapus customer ${cust.customerName} (${cust.customerId || cust.id})?`)) return;
+    try {
+      setLoading(true);
+      await deleteDoc(doc(db, "customers", cust.id || cust.customerId));
+      showAlert(`Customer berhasil dihapus.`);
+      loadAllData();
+    } catch (e: any) {
+      showAlert(e.message || "Gagal menghapus customer");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="flex h-screen bg-[#FFF5F6] font-sans text-rose-950">
+      {/* Session Timeout Modal */}
+      {isSessionTimeoutOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-70 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-rose-200 text-center">
+            <div className="text-3xl mb-2">⏱️</div>
+            <h3 className="text-base font-bold text-rose-950 mb-2">Sesi Berakhir</h3>
+            <p className="text-xs text-slate-600 mb-5 leading-relaxed">Sesi berakhir, otomatis keluar.</p>
+            <button
+              type="button"
+              onClick={handleSessionTimeoutLogout}
+              className="w-full py-2.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-xl shadow"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Backdrop */}
       {isMobileMenuOpen && (
         <button
           type="button"
@@ -1578,7 +1362,7 @@ export default function Page() {
             { key: "purchase", icon: "📥", label: "Purchase Order & Receiving" },
             { key: "reports", icon: "📑", label: "Laporan (Reports)" },
             { key: "settings", icon: "⚙️", label: "Pengaturan & Toko" },
-            ...(isRootAdmin ? [{ key: "users", icon: "👥", label: "User Management" }] : []),
+            ...(isRootAdmin ? [{ key: "human", icon: "👥", label: "Human" }] : []),
           ].map((item) => (
             <button
               key={item.key}
@@ -1618,7 +1402,6 @@ export default function Page() {
           >
             ☰
           </button>
-
           <div>
             <h2 className="text-lg font-bold text-rose-950 uppercase">
               {currentTab === "dashboard" && "Dashboard Operasional"}
@@ -1626,8 +1409,8 @@ export default function Page() {
               {currentTab === "inventory" && "Katalog Persediaan & Stock Card Ledger"}
               {currentTab === "purchase" && "Purchasing Order (PO) & Penerimaan Barang"}
               {currentTab === "reports" && "Pusat Laporan Historis"}
-              {currentTab === "settings" && "Konfigurasi Toko & RajaOngkir API"}
-              {currentTab === "users" && "Manajemen Pengguna (User Management)"}
+              {currentTab === "settings" && "Konfigurasi Toko & Hardware Printer"}
+              {currentTab === "human" && "Manajemen Human (Staff, Supplier & Customer)"}
             </h2>
             <p className="text-xs text-rose-500">Database Realtime Firestore Sinkron</p>
           </div>
@@ -1635,7 +1418,11 @@ export default function Page() {
             <NotificationBell
               currentUserId={currentUser.id}
               currentUserName={currentUser.name}
-              onNavigateToDocument={handleNavigateFromNotification}
+              onNavigateToDocument={(type) => {
+                if (type === "SO" || type === "DO") setCurrentTab("sales");
+                else if (type === "PO" || type === "RECEIVING") setCurrentTab("purchase");
+                else if (type === "SOP" || type === "ADJ") setCurrentTab("inventory");
+              }}
               showAlert={showAlert}
             />
             <button
@@ -1721,6 +1508,7 @@ export default function Page() {
                 )}
               </div>
 
+              {/* 2.1 SALES ORDERS */}
               {salesSubTab === "so" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -1765,7 +1553,7 @@ export default function Page() {
                           <th className="p-2.5">Ekspedisi & Ongkir</th>
                           <th className="p-2.5">Total Bayar</th>
                           <th className="p-2.5">Status</th>
-                          <th className="p-2.5 text-right">Aksi</th>
+                          <th className="p-2.5 text-center">Aksi</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-rose-50">
@@ -1798,87 +1586,17 @@ export default function Page() {
                                 {so.status}
                               </span>
                             </td>
-                            <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                            <td className="p-2.5 text-center">
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const msg = buildWhatsAppMessage(so);
-                                  const cleanPhone = String(so.phone || "").replace(/[^0-9]/g, "");
-                                  let targetUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
-                                  if (cleanPhone) {
-                                    const formattedPhone = cleanPhone.startsWith("0") ? "62" + cleanPhone.slice(1) : cleanPhone;
-                                    targetUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(msg)}`;
-                                  }
-                                  window.open(targetUrl, "_blank");
+                                  setSelectedSoDetail(so);
+                                  setIsSoDetailModalOpen(true);
                                 }}
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
+                                className="px-3 py-1 bg-[#BE185D] hover:bg-[#9D174D] text-white rounded-lg text-xs font-bold shadow-xs"
                               >
-                                💬 WA
+                                🔍 Detail
                               </button>
-
-                              {so.status === "CONFIRMED" && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEditingSoId(so.soId || so.id);
-                                      setSoModalInitCustomer({
-                                        customerName: so.customerName,
-                                        phone: so.phone,
-                                        displayAddress: so.address,
-                                      });
-                                      setSoModalInitItems(so.items || []);
-                                      setSoModalInitRates(so.shippingRatesSnapshot || []);
-                                      setSoModalInitCost(so.shippingCost || 0);
-                                      setSoModalInitCourier(so.shippingCourier || "");
-                                      setSoModalInitService(so.shippingServiceName || "");
-                                      setIsSoModalOpen(true);
-                                    }}
-                                    className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold"
-                                  >
-                                    ✏️ Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setProcessingConfirmTarget(so)}
-                                    className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-[11px] font-bold"
-                                  >
-                                    ⏩ Processing
-                                  </button>
-                                </>
-                              )}
-
-                              {so.status === "PROCESSING" && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setTargetProcessingSo(so);
-                                      setIsEditExpeditionModalOpen(true);
-                                    }}
-                                    className="px-2.5 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded text-[11px] font-bold"
-                                  >
-                                    🚚 Ganti Ekspedisi
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleMarkReadyToDeliver(so)}
-                                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold"
-                                  >
-                                    📦 Ready
-                                  </button>
-                                </>
-                              )}
-
-                              {so.status === "READY TO DELIVER" && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleProcessDO(so)}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
-                                >
-                                  🚀 Terbitkan DO
-                                </button>
-                              )}
                             </td>
                           </tr>
                         ))}
@@ -1888,9 +1606,13 @@ export default function Page() {
                 </div>
               )}
 
+              {/* 2.2 DELIVERY ORDERS */}
               {salesSubTab === "do" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                  <span className="text-xs font-bold text-rose-950">Daftar Delivery Order (Stok Telah Dipotong)</span>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-rose-950 uppercase">Daftar Delivery Order (Stok Telah Dipotong)</span>
+                    <span className="text-xs text-slate-500">Total: <b>{deliveryOrders.length}</b> DO</span>
+                  </div>
                   <div className="overflow-x-auto text-xs">
                     <table className="w-full text-left">
                       <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
@@ -1901,6 +1623,8 @@ export default function Page() {
                           <th className="p-2.5">Ekspedisi</th>
                           <th className="p-2.5">Total Pcs</th>
                           <th className="p-2.5">Tanggal</th>
+                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5 text-right">Aksi</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-rose-50">
@@ -1912,6 +1636,33 @@ export default function Page() {
                             <td className="p-2.5">{d.expedition}</td>
                             <td className="p-2.5 font-bold">{d.totalPcs} pcs</td>
                             <td className="p-2.5">{d.date}</td>
+                            <td className="p-2.5">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${d.status === "CANCELLED" ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-800"}`}>
+                                {d.status || "DELIVERED"}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => handlePrintDoLabel(d)}
+                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded text-[11px] font-bold shadow-xs"
+                              >
+                                🖨️ Cetak Label (Bluetooth)
+                              </button>
+                              {d.status !== "CANCELLED" && isRootAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDoCancelTarget(d);
+                                    setDoCancelReason("");
+                                    setIsDoCancelConfirmOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold shadow-xs"
+                                >
+                                  ✕ Batalkan DO
+                                </button>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1952,7 +1703,7 @@ export default function Page() {
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <div>
                       <span className="text-xs font-bold text-rose-950 uppercase">Master Produk & Stok Gudang</span>
-                      <p className="text-[11px] text-slate-500">Klik tombol Edit untuk memperbarui parameter produk</p>
+                      <p className="text-[11px] text-slate-500">Katalog dan kuantitas persediaan fisik terkini</p>
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto">
                       <input
@@ -2039,13 +1790,6 @@ export default function Page() {
                             </td>
                           </tr>
                         ))}
-                        {filteredProducts.length === 0 && (
-                          <tr>
-                            <td colSpan={8} className="p-5 text-center text-slate-400">
-                              Tidak ada produk yang cocok dengan pencarian.
-                            </td>
-                          </tr>
-                        )}
                       </tbody>
                     </table>
                   </div>
@@ -2102,7 +1846,7 @@ export default function Page() {
                   <div className="flex flex-wrap justify-between items-center gap-3">
                     <div>
                       <span className="text-xs font-bold text-rose-950 uppercase">Penyesuaian Stok (Stock Adjustment)</span>
-                      <p className="text-[11px] text-slate-500">Koreksi saldo fisik bertambah atau berkurang secara atomik</p>
+                      <p className="text-[11px] text-slate-500">Koreksi saldo fisik secara atomik</p>
                     </div>
                     {!isStaff && (
                       <button
@@ -2128,7 +1872,6 @@ export default function Page() {
                           <th className="p-2.5">Stok Sebelum</th>
                           <th className="p-2.5">Stok Baru</th>
                           <th className="p-2.5">Alasan</th>
-                          <th className="p-2.5">Petugas</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-rose-50">
@@ -2139,9 +1882,7 @@ export default function Page() {
                             <td className="p-2.5 font-mono font-bold">{adj.sku}</td>
                             <td className="p-2.5 font-medium">{adj.itemName}</td>
                             <td className="p-2.5 font-bold">
-                              <span className={`px-2 py-0.5 rounded text-[10px] ${
-                                adj.adjustmentType === "INCREASE" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
-                              }`}>
+                              <span className={`px-2 py-0.5 rounded text-[10px] ${adj.adjustmentType === "INCREASE" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
                                 {adj.adjustmentType}
                               </span>
                             </td>
@@ -2151,7 +1892,6 @@ export default function Page() {
                             <td className="p-2.5 text-slate-500">{adj.currentStock ?? "-"}</td>
                             <td className="p-2.5 font-bold text-rose-950">{adj.newStock ?? "-"}</td>
                             <td className="p-2.5 max-w-xs truncate" title={adj.reason}>{adj.reason || "-"}</td>
-                            <td className="p-2.5">{adj.user || adj.executedBy || "-"}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2166,7 +1906,7 @@ export default function Page() {
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="text-xs font-bold text-rose-950 uppercase">Audit Fisik Stock Opname</span>
-                      <p className="text-[11px] text-slate-500">Pilih mode audit General atau Parsial</p>
+                      <p className="text-[11px] text-slate-500">Hasil audit mobile app direview dengan No Dokumen SRVW sebelum posting final</p>
                     </div>
                     {!isStaff && isRootAdmin && (
                       <button
@@ -2185,6 +1925,7 @@ export default function Page() {
                         <th className="p-2.5">Tanggal</th>
                         <th className="p-2.5">Total SKU</th>
                         <th className="p-2.5">Status</th>
+                        <th className="p-2.5">Review / Post Ref</th>
                         <th className="p-2.5 text-right">Aksi</th>
                       </tr>
                     </thead>
@@ -2194,9 +1935,53 @@ export default function Page() {
                           <td className="p-2.5 font-mono font-bold">{sop.documentNo || sop.sopId}</td>
                           <td className="p-2.5">{sop.opnameDate}</td>
                           <td className="p-2.5 font-bold">{sop.totalSku} SKU</td>
-                          <td className="p-2.5 font-bold text-amber-600">{sop.status}</td>
-                          <td className="p-2.5 text-right">
-                            {(sop.status === "OPEN" || sop.status === "COUNTING") && !isStaff && (
+                          <td className="p-2.5 font-bold">
+                            <span className={`px-2 py-0.5 rounded text-[10px] ${
+                              sop.status === "POSTED" ? "bg-emerald-100 text-emerald-800" :
+                              sop.status === "CANCELLED" ? "bg-red-100 text-red-800" :
+                              "bg-amber-100 text-amber-800"
+                            }`}>
+                              {sop.status}
+                            </span>
+                          </td>
+                          <td className="p-2.5 font-mono text-[11px] text-slate-600">
+                            {sop.postingId || sop.reviewDocumentNo || "-"}
+                          </td>
+                          <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                            {/* Tombol PDF merah murni */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const rows = (sop.items || []).map((it: any) => [
+                                  it.skuCode || it.skuId,
+                                  it.itemName,
+                                  it.systemQtySnapshot ?? 0,
+                                  it.physicalQty ?? "-",
+                                  (it.physicalQty != null ? Number(it.physicalQty) - Number(it.systemQtySnapshot || 0) : "-"),
+                                ]);
+                                downloadPdf(
+                                  `Audit Report Stock Opname (${sop.documentNo || sop.sopId})`,
+                                  `SOP_Item_Report_${sop.documentNo || sop.sopId}`,
+                                  ["SKU", "Nama Produk", "Qty Sistem", "Qty Fisik", "Selisih"],
+                                  rows
+                                );
+                              }}
+                              className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold shadow-xs"
+                            >
+                              📄 Ekspor PDF
+                            </button>
+
+                            {sop.status !== "POSTED" && sop.status !== "CANCELLED" && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSopReview(sop)}
+                                className="px-2.5 py-1 bg-[#BE185D] hover:bg-[#9D174D] text-white rounded text-[11px] font-bold shadow-xs"
+                              >
+                                ✍️ Review & Post
+                              </button>
+                            )}
+
+                            {sop.status !== "POSTED" && sop.status !== "CANCELLED" && !isStaff && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -2205,7 +1990,7 @@ export default function Page() {
                                   setSopCountdown(10);
                                   setIsSopCancelConfirmOpen(true);
                                 }}
-                                className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
+                                className="px-2.5 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded text-[11px] font-bold shadow-xs"
                               >
                                 ✕ Batalkan SOP
                               </button>
@@ -2221,14 +2006,10 @@ export default function Page() {
               {/* 3.5 HISTORI MUTASI */}
               {invSubTab === "movement" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                  <div className="flex flex-wrap justify-between items-center gap-3">
-                    <div>
-                      <span className="text-xs font-bold text-rose-950 uppercase">Histori Mutasi Stok (stock_movements)</span>
-                      <p className="text-[11px] text-slate-500">Catatan kronologis keluar-masuk barang</p>
-                    </div>
-                    <span className="text-xs text-slate-500 font-medium">Total: <b>{stockMovements.length}</b></span>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-rose-950 uppercase">Histori Mutasi Stok (stock_movements)</span>
+                    <span className="text-xs text-slate-500">Total: <b>{stockMovements.length}</b></span>
                   </div>
-
                   <div className="overflow-x-auto text-xs">
                     <table className="w-full text-left">
                       <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
@@ -2236,10 +2017,9 @@ export default function Page() {
                           <th className="p-2.5">Tanggal</th>
                           <th className="p-2.5">SKU</th>
                           <th className="p-2.5">Nama Barang</th>
-                          <th className="p-2.5">Tipe Mutasi</th>
+                          <th className="p-2.5">Tipe</th>
                           <th className="p-2.5">Masuk</th>
                           <th className="p-2.5">Keluar</th>
-                          <th className="p-2.5">Stok Awal</th>
                           <th className="p-2.5">Stok Akhir</th>
                           <th className="p-2.5">Referensi</th>
                           <th className="p-2.5">Petugas</th>
@@ -2247,26 +2027,16 @@ export default function Page() {
                       </thead>
                       <tbody className="divide-y divide-rose-50">
                         {stockMovements.map((m, idx) => (
-                          <tr key={m.id || idx} className="hover:bg-rose-50/40 transition">
-                            <td className="p-2.5 text-slate-600">{m.date || "-"}</td>
-                            <td className="p-2.5 font-mono font-bold text-rose-900">{m.itemCode || "-"}</td>
-                            <td className="p-2.5 font-medium">{m.itemNameSnapshot || "-"}</td>
-                            <td className="p-2.5 font-bold">
-                              <span className={`px-2 py-0.5 rounded text-[10px] ${
-                                m.type === "RECEIVING" ? "bg-emerald-100 text-emerald-800" :
-                                m.type === "DELIVERY" ? "bg-blue-100 text-blue-800" :
-                                m.type === "ADJUSTMENT" ? "bg-amber-100 text-amber-800" :
-                                "bg-purple-100 text-purple-800"
-                              }`}>
-                                {m.type || "MUTASI"}
-                              </span>
-                            </td>
-                            <td className="p-2.5 font-bold text-emerald-600">{Number(m.qtyIn || 0) > 0 ? `+${m.qtyIn}` : "-"}</td>
-                            <td className="p-2.5 font-bold text-red-600">{Number(m.qtyOut || 0) > 0 ? `-${m.qtyOut}` : "-"}</td>
-                            <td className="p-2.5 text-slate-600">{m.previousStock ?? "-"}</td>
-                            <td className="p-2.5 font-bold text-rose-950">{m.newStock ?? "-"}</td>
-                            <td className="p-2.5 text-[11px] text-slate-600">{m.referenceId || "-"}</td>
-                            <td className="p-2.5">{m.user || "-"}</td>
+                          <tr key={m.id || idx}>
+                            <td className="p-2.5">{m.date}</td>
+                            <td className="p-2.5 font-mono font-bold text-rose-900">{m.itemCode}</td>
+                            <td className="p-2.5">{m.itemNameSnapshot}</td>
+                            <td className="p-2.5 font-bold">{m.type}</td>
+                            <td className="p-2.5 text-emerald-600 font-bold">{m.qtyIn > 0 ? `+${m.qtyIn}` : "-"}</td>
+                            <td className="p-2.5 text-red-600 font-bold">{m.qtyOut > 0 ? `-${m.qtyOut}` : "-"}</td>
+                            <td className="p-2.5 font-bold">{m.newStock}</td>
+                            <td className="p-2.5 text-[11px] text-slate-600">{m.referenceId}</td>
+                            <td className="p-2.5">{m.user}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2307,7 +2077,7 @@ export default function Page() {
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="text-xs font-bold text-rose-950 uppercase">Daftar Purchase Order</span>
-                      <p className="text-[11px] text-slate-500">Pemesanan barang ke supplier dan penerimaan logistik</p>
+                      <p className="text-[11px] text-slate-500">Pemesanan barang ke supplier berstatus rekanan</p>
                     </div>
                     {!isStaff && (
                       <button
@@ -2334,74 +2104,82 @@ export default function Page() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-rose-50">
-                        {purchaseOrders.map((po) => {
-                          const isDone = po.status === "COMPLETED" || po.status === "CANCELLED";
-                          return (
-                            <tr key={po.id} className="hover:bg-rose-50/30 transition">
-                              <td className="p-2.5 font-mono font-bold text-rose-900">{po.poId || po.documentNo}</td>
-                              <td className="p-2.5">{po.poDate}</td>
-                              <td className="p-2.5 font-semibold">{po.supplier}</td>
-                              <td className="p-2.5">
-                                {(po.items || []).map((it: any, i: number) => (
-                                  <div key={i} className="text-[11px]">
-                                    • {it.itemName} (Pesan: {it.qty} | Datang: {it.receivedQty || 0})
-                                  </div>
-                                ))}
-                              </td>
-                              <td className="p-2.5 font-bold text-emerald-600">{formatRupiah(Number(po.total || 0))}</td>
-                              <td className="p-2.5 font-bold">
-                                <span className={`px-2 py-0.5 rounded text-[10px] ${
-                                  po.status === "COMPLETED" ? "bg-emerald-100 text-emerald-800" :
-                                  po.status === "OPEN" ? "bg-blue-100 text-blue-800" :
-                                  po.status === "PARTIAL" ? "bg-amber-100 text-amber-800" :
-                                  "bg-red-100 text-red-800"
-                                }`}>
-                                  {po.status}
-                                </span>
-                              </td>
-                              <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
-                                {!isDone && !isStaff && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setPoCancelTarget(po);
-                                      setPoCancelReason("");
-                                      setIsPoCancelConfirmOpen(true);
-                                    }}
-                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold shadow-xs"
-                                  >
-                                    Batal
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
+                        {purchaseOrders.map((po) => (
+                          <tr key={po.id}>
+                            <td className="p-2.5 font-mono font-bold text-rose-900">{po.poId || po.documentNo}</td>
+                            <td className="p-2.5">{po.poDate}</td>
+                            <td className="p-2.5 font-semibold">{po.supplier}</td>
+                            <td className="p-2.5">
+                              {(po.items || []).map((it: any, i: number) => (
+                                <div key={i} className="text-[11px]">
+                                  • {it.itemName} (Pesan: {it.qty} | Datang: {it.receivedQty || 0})
+                                </div>
+                              ))}
+                            </td>
+                            <td className="p-2.5 font-bold text-emerald-600">{formatRupiah(Number(po.total || 0))}</td>
+                            <td className="p-2.5 font-bold">
+                              <span className={`px-2 py-0.5 rounded text-[10px] ${
+                                po.status === "COMPLETED" ? "bg-emerald-100 text-emerald-800" :
+                                po.status === "OPEN" ? "bg-blue-100 text-blue-800" :
+                                po.status === "PARTIAL" ? "bg-amber-100 text-amber-800" :
+                                "bg-red-100 text-red-800"
+                              }`}>
+                                {po.status}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const rows = (po.items || []).map((it: any) => [
+                                    it.sku,
+                                    it.itemName,
+                                    it.qty,
+                                    formatRupiah(Number(it.purchasingPrice || 0)),
+                                    formatRupiah(Number(it.subtotal || 0)),
+                                  ]);
+                                  downloadPdf(
+                                    `Purchase Order (${po.poId || po.documentNo}) - Supplier: ${po.supplier}`,
+                                    `PO_Report_${po.poId || po.documentNo}`,
+                                    ["SKU", "Nama Barang", "Qty Pesan", "HPP", "Subtotal"],
+                                    rows
+                                  );
+                                }}
+                                className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold shadow-xs"
+                              >
+                                📄 Ekspor PDF
+                              </button>
+                              {po.status !== "COMPLETED" && po.status !== "CANCELLED" && !isStaff && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPoCancelTarget(po);
+                                    setPoCancelReason("");
+                                    setIsPoCancelConfirmOpen(true);
+                                  }}
+                                  className="px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded text-[11px] font-bold shadow-xs"
+                                >
+                                  Batal
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
                 </div>
               )}
 
-              {/* 4.2 MENU RECEIVING MASUK */}
+              {/* 4.2 RECEIVING */}
               {poSubTab === "receiving_list" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="text-xs font-bold text-rose-950 uppercase">Penerimaan Barang (Receiving)</span>
-                      <p className="text-[11px] text-slate-500">Log bukti penerimaan barang masuk ke gudang dari supplier</p>
+                      <p className="text-[11px] text-slate-500">Log bukti penerimaan barang masuk ke gudang</p>
                     </div>
-                    {!isStaff && (
-                      <button
-                        type="button"
-                        onClick={handleOpenNewReceiving}
-                        className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow transition"
-                      >
-                        + Terima Barang (Receiving Baru)
-                      </button>
-                    )}
                   </div>
-
                   <div className="overflow-x-auto text-xs">
                     <table className="w-full text-left">
                       <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
@@ -2412,34 +2190,41 @@ export default function Page() {
                           <th className="p-2.5">Supplier</th>
                           <th className="p-2.5">Barang Diterima</th>
                           <th className="p-2.5">Petugas</th>
-                          <th className="p-2.5">Catatan</th>
+                          <th className="p-2.5 text-right">Aksi</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-rose-50">
                         {receivings.map((r) => (
-                          <tr key={r.id} className="hover:bg-rose-50/30 transition">
+                          <tr key={r.id}>
                             <td className="p-2.5 font-mono font-bold text-rose-900">{r.receivingId || r.documentNo}</td>
                             <td className="p-2.5 font-mono text-blue-700 font-bold">{r.poId}</td>
                             <td className="p-2.5">{r.date}</td>
                             <td className="p-2.5 font-medium">{r.supplier || "-"}</td>
                             <td className="p-2.5">
                               {(r.items || []).map((it: any, i: number) => (
-                                <div key={i} className="text-[11px]">
-                                  • {it.itemName}: <b>{it.qtyReceived} pcs</b>
-                                </div>
+                                <div key={i} className="text-[11px]">• {it.itemName}: <b>{it.qtyReceived} pcs</b></div>
                               ))}
                             </td>
                             <td className="p-2.5">{r.createdBy}</td>
-                            <td className="p-2.5 text-slate-500">{r.notes || "-"}</td>
-                          </tr>
-                        ))}
-                        {receivings.length === 0 && (
-                          <tr>
-                            <td colSpan={7} className="p-5 text-center text-slate-400">
-                              Belum ada catatan penerimaan barang masuk.
+                            <td className="p-2.5 text-right">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const rows = (r.items || []).map((it: any) => [it.sku, it.itemName, `${it.qtyReceived} pcs`]);
+                                  downloadPdf(
+                                    `Bukti Penerimaan Barang (${r.receivingId || r.documentNo}) - Ref PO: ${r.poId}`,
+                                    `RCV_${r.receivingId || r.documentNo}`,
+                                    ["SKU", "Nama Produk Diterima", "Qty Diterima"],
+                                    rows
+                                  );
+                                }}
+                                className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold shadow-xs"
+                              >
+                                📄 Ekspor PDF
+                              </button>
                             </td>
                           </tr>
-                        )}
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -2458,6 +2243,7 @@ export default function Page() {
                   { key: "po", label: "Report PO" },
                   { key: "receiving", label: "Receiving Report" },
                   { key: "opname", label: "Stock Opname Report" },
+                  { key: "customer", label: "Customer Report" },
                   { key: "stock", label: "Stock Report" },
                   { key: "sales", label: "Sales Report (By Day/Item)" },
                 ].map((st) => (
@@ -2475,329 +2261,413 @@ export default function Page() {
               </div>
 
               <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                {/* 5.1 REPORT SO */}
-                {reportSubTab === "so" && (() => {
-                  const filtered = salesOrders.filter((so) => {
-                    if (reportStartDate && so.date < reportStartDate) return false;
-                    if (reportEndDate && so.date > reportEndDate) return false;
-                    return true;
-                  });
+                {/* 5.1 REPORT SO (PDF Merah & Excel) */}
+                {reportSubTab === "so" && (
+                  <div className="space-y-3">
+                    <span className="text-xs font-bold text-rose-950 uppercase">Laporan Sales Order</span>
+                    <div className="overflow-x-auto text-xs">
+                      <table className="w-full text-left">
+                        <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                          <tr>
+                            <th className="p-2">No SO</th>
+                            <th className="p-2">Tanggal</th>
+                            <th className="p-2">Customer</th>
+                            <th className="p-2">Total Nilai</th>
+                            <th className="p-2">Status</th>
+                            <th className="p-2 text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-rose-50">
+                          {salesOrders.map((so) => (
+                            <tr key={so.id}>
+                              <td className="p-2 font-mono font-bold">{so.soId}</td>
+                              <td className="p-2">{so.date}</td>
+                              <td className="p-2">{so.customerName}</td>
+                              <td className="p-2 font-bold text-emerald-600">{formatRupiah(Number(so.total || 0))}</td>
+                              <td className="p-2 font-bold">{so.status}</td>
+                              <td className="p-2 text-right space-x-1.5 whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const rows = (so.items || []).map((it: any) => [
+                                      it.sku,
+                                      it.itemName,
+                                      it.qty || it.quantity,
+                                      formatRupiah(Number(it.price || 0)),
+                                      formatRupiah(Number(it.subtotal || 0)),
+                                    ]);
+                                    downloadPdf(
+                                      `Sales Order Report (${so.soId}) - Customer: ${so.customerName}`,
+                                      `SO_${so.soId}`,
+                                      ["SKU", "Nama Barang", "Kuantitas", "Harga", "Subtotal"],
+                                      rows
+                                    );
+                                  }}
+                                  className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
+                                >
+                                  📄 Ekspor PDF
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const rows = (so.items || []).map((it: any) => [
+                                      so.soId,
+                                      so.date,
+                                      so.customerName,
+                                      it.sku,
+                                      it.itemName,
+                                      it.qty || it.quantity,
+                                      it.price,
+                                      it.subtotal,
+                                      so.total,
+                                      so.status,
+                                    ]);
+                                    downloadExcel(
+                                      so.soId,
+                                      "SO_Report",
+                                      ["No SO", "Tanggal", "Customer", "SKU", "Nama Barang", "Qty", "Harga", "Subtotal", "Total SO", "Status"],
+                                      rows
+                                    );
+                                  }}
+                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
+                                >
+                                  📊 Ekspor Excel
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
-                  const exportFlattenedData = filtered.flatMap((so) =>
-                    (so.items && so.items.length > 0 ? so.items : [{ sku: "-", itemName: "-", qty: 0, price: 0, subtotal: 0 }]).map((it: any) => ({
-                      date: so.date,
-                      soId: so.soId,
-                      customerName: so.customerName,
-                      sku: it.sku || "-",
-                      itemName: it.itemName || "-",
-                      qty: it.qty || 0,
-                      price: it.price || 0,
-                      subtotal: it.subtotal || 0,
-                      total: so.total || 0,
-                      status: so.status,
-                    }))
-                  );
+                {/* 5.2 REPORT DO (PDF Merah & Excel) */}
+                {reportSubTab === "do" && (
+                  <div className="space-y-3">
+                    <span className="text-xs font-bold text-rose-950 uppercase">Laporan Delivery Order</span>
+                    <div className="overflow-x-auto text-xs">
+                      <table className="w-full text-left">
+                        <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                          <tr>
+                            <th className="p-2">No DO</th>
+                            <th className="p-2">Ref SO</th>
+                            <th className="p-2">Tanggal</th>
+                            <th className="p-2">Penerima</th>
+                            <th className="p-2">Total Pcs</th>
+                            <th className="p-2">Ekspedisi</th>
+                            <th className="p-2 text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-rose-50">
+                          {deliveryOrders.map((d) => (
+                            <tr key={d.id}>
+                              <td className="p-2 font-mono font-bold">{d.doId}</td>
+                              <td className="p-2 font-mono">{d.soId}</td>
+                              <td className="p-2">{d.recipientName}</td>
+                              <td className="p-2 font-bold">{d.totalPcs} pcs</td>
+                              <td className="p-2">{d.date}</td>
+                              <td className="p-2">{d.expedition}</td>
+                              <td className="p-2 text-right space-x-1.5 whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const rows = (d.items || []).map((it: any) => [it.sku, it.itemName, it.qty || it.quantity]);
+                                    downloadPdf(
+                                      `Delivery Order Report (${d.doId}) - Penerima: ${d.recipientName}`,
+                                      `DO_${d.doId}`,
+                                      ["SKU", "Nama Barang", "Kuantitas Pcs"],
+                                      rows
+                                    );
+                                  }}
+                                  className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
+                                >
+                                  📄 Ekspor PDF
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const rows = (d.items || []).map((it: any) => [
+                                      d.doId,
+                                      d.soId,
+                                      d.date,
+                                      d.recipientName,
+                                      it.sku,
+                                      it.itemName,
+                                      it.qty || it.quantity,
+                                      d.expedition,
+                                    ]);
+                                    downloadExcel(
+                                      d.doId,
+                                      "DO_Report",
+                                      ["No DO", "Ref SO", "Tanggal", "Penerima", "SKU", "Nama Barang", "Qty", "Ekspedisi"],
+                                      rows
+                                    );
+                                  }}
+                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
+                                >
+                                  📊 Ekspor Excel
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
-                  return (
-                    <div className="space-y-3">
-                      <ReportExportControls
-                        reportTitle="Laporan Sales Order"
-                        startDate={reportStartDate}
-                        endDate={reportEndDate}
-                        onStartDateChange={setReportStartDate}
-                        onEndDateChange={setReportEndDate}
-                        data={exportFlattenedData}
-                        columns={[
-                          { header: "Tanggal", dataKey: "date" },
-                          { header: "No SO", dataKey: "soId" },
-                          { header: "Customer", dataKey: "customerName" },
-                          { header: "SKU", dataKey: "sku" },
-                          { header: "Nama Produk", dataKey: "itemName" },
-                          { header: "Qty", dataKey: "qty" },
-                          { header: "Harga", dataKey: "price", format: formatRupiah },
-                          { header: "Subtotal", dataKey: "subtotal", format: formatRupiah },
-                          { header: "Total SO", dataKey: "total", format: formatRupiah },
-                          { header: "Status", dataKey: "status" },
-                        ]}
-                      />
-                      <div className="overflow-x-auto text-xs">
-                        <table className="w-full text-left">
-                          <thead className="bg-rose-50 text-rose-900 font-bold">
-                            <tr><th className="p-2">No SO</th><th className="p-2">Tanggal</th><th className="p-2">Customer</th><th className="p-2">Total Nilai</th><th className="p-2">Status</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-rose-50">
-                            {filtered.map((so) => (
-                              <tr key={so.id}><td className="p-2 font-mono font-bold">{so.soId}</td><td className="p-2">{so.date}</td><td className="p-2">{so.customerName}</td><td className="p-2 font-bold text-emerald-600">{formatRupiah(Number(so.total || 0))}</td><td className="p-2 font-bold">{so.status}</td></tr>
-                            ))}
-                          </tbody>
-                        </table>
+                {/* 5.3 REPORT PO (PDF Merah) */}
+                {reportSubTab === "po" && (
+                  <div className="space-y-3">
+                    <span className="text-xs font-bold text-rose-950 uppercase">Laporan Purchase Order</span>
+                    <div className="overflow-x-auto text-xs">
+                      <table className="w-full text-left">
+                        <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                          <tr>
+                            <th className="p-2">No PO</th>
+                            <th className="p-2">Tanggal</th>
+                            <th className="p-2">Supplier</th>
+                            <th className="p-2">Total Nilai</th>
+                            <th className="p-2">Status</th>
+                            <th className="p-2 text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-rose-50">
+                          {purchaseOrders.map((po) => (
+                            <tr key={po.id}>
+                              <td className="p-2 font-mono font-bold">{po.poId || po.documentNo}</td>
+                              <td className="p-2">{po.poDate}</td>
+                              <td className="p-2">{po.supplier}</td>
+                              <td className="p-2 font-bold text-emerald-600">{formatRupiah(Number(po.total || 0))}</td>
+                              <td className="p-2 font-bold">{po.status}</td>
+                              <td className="p-2 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const rows = (po.items || []).map((it: any) => [
+                                      it.sku,
+                                      it.itemName,
+                                      it.qty,
+                                      formatRupiah(Number(it.purchasingPrice || 0)),
+                                      formatRupiah(Number(it.subtotal || 0)),
+                                    ]);
+                                    downloadPdf(
+                                      `Purchase Order (${po.poId || po.documentNo})`,
+                                      `PO_${po.poId || po.documentNo}`,
+                                      ["SKU", "Nama Barang", "Qty Pesan", "HPP", "Subtotal"],
+                                      rows
+                                    );
+                                  }}
+                                  className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
+                                >
+                                  📄 Ekspor PDF
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5.4 REPORT RECEIVING (PDF Merah) */}
+                {reportSubTab === "receiving" && (
+                  <div className="space-y-3">
+                    <span className="text-xs font-bold text-rose-950 uppercase">Laporan Receiving</span>
+                    <div className="overflow-x-auto text-xs">
+                      <table className="w-full text-left">
+                        <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                          <tr>
+                            <th className="p-2">No Receiving</th>
+                            <th className="p-2">Ref PO</th>
+                            <th className="p-2">Tanggal</th>
+                            <th className="p-2">Petugas</th>
+                            <th className="p-2 text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-rose-50">
+                          {receivings.map((r) => (
+                            <tr key={r.id}>
+                              <td className="p-2 font-mono font-bold">{r.receivingId}</td>
+                              <td className="p-2 font-mono">{r.poId}</td>
+                              <td className="p-2">{r.date}</td>
+                              <td className="p-2">{r.createdBy}</td>
+                              <td className="p-2 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const rows = (r.items || []).map((it: any) => [it.sku, it.itemName, `${it.qtyReceived} pcs`]);
+                                    downloadPdf(
+                                      `Report Receiving (${r.receivingId})`,
+                                      `RCV_${r.receivingId}`,
+                                      ["SKU", "Nama Barang", "Qty Masuk"],
+                                      rows
+                                    );
+                                  }}
+                                  className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
+                                >
+                                  📄 Ekspor PDF
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5.5 REPORT STOCK OPNAME (PDF Merah & Excel Lengkap) */}
+                {reportSubTab === "opname" && (
+                  <div className="space-y-3">
+                    <span className="text-xs font-bold text-rose-950 uppercase">Laporan Stock Opname</span>
+                    <div className="overflow-x-auto text-xs">
+                      <table className="w-full text-left">
+                        <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                          <tr>
+                            <th className="p-2">No Dokumen</th>
+                            <th className="p-2">Tanggal</th>
+                            <th className="p-2">Total SKU</th>
+                            <th className="p-2">Status</th>
+                            <th className="p-2 text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-rose-50">
+                          {stockOpnames.map((sop) => {
+                            const dateStr = sop.opnameDate || "-";
+                            const docNo = sop.documentNo || sop.sopId;
+                            const headers = ["date", "itemcode", "itemname", "qty asal", "qty hitung", "qty value", "qty variance", "counted by"];
+                            const rows = (sop.items || []).map((it: any) => {
+                              const orig = Number(it.systemQtySnapshot || 0);
+                              const phys = it.physicalQty != null ? Number(it.physicalQty) : orig;
+                              const variance = phys - orig;
+                              return [
+                                dateStr,
+                                it.skuCode || it.skuId,
+                                it.itemName,
+                                orig,
+                                phys,
+                                phys,
+                                variance,
+                                it.countedBy || sop.initializedBy || "-",
+                              ];
+                            });
+
+                            return (
+                              <tr key={sop.id}>
+                                <td className="p-2 font-mono font-bold">{docNo}</td>
+                                <td className="p-2">{dateStr}</td>
+                                <td className="p-2 font-bold">{sop.totalSku} SKU</td>
+                                <td className="p-2 font-bold">{sop.status}</td>
+                                <td className="p-2 text-right space-x-1.5 whitespace-nowrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => downloadPdf(`Stock Opname Report (${docNo})`, `SOP_${docNo}`, headers, rows)}
+                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
+                                  >
+                                    📄 Ekspor PDF
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => downloadExcel(docNo, "SOP_Report", headers, rows)}
+                                    className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
+                                  >
+                                    📊 Ekspor Excel
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5.6 REPORT CUSTOMER (ID CUST-XXXX yang sudah ditentukan) */}
+                {reportSubTab === "customer" && (
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="text-xs font-bold text-rose-950 uppercase">Laporan Data Customer Terdaftar</span>
+                        <p className="text-[11px] text-slate-500">Total customer: <b>{customers.length}</b></p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rows = customers.map((c, idx) => {
+                              const determinedId = c.customerId?.startsWith("CUST-") ? c.customerId : `CUST-${String(idx + 1).padStart(4, "0")}`;
+                              return [determinedId, c.customerName, c.phone || "-", c.email || "-", c.displayAddress || c.address || "-"];
+                            });
+                            downloadPdf(
+                              "Laporan Daftar Customer Atin's Collection",
+                              "Daftar_Customer",
+                              ["ID Customer", "Nama Customer", "No. Telepon", "Email", "Alamat Pengiriman"],
+                              rows
+                            );
+                          }}
+                          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-xs"
+                        >
+                          📄 Ekspor File PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rows = customers.map((c, idx) => {
+                              const determinedId = c.customerId?.startsWith("CUST-") ? c.customerId : `CUST-${String(idx + 1).padStart(4, "0")}`;
+                              return [determinedId, c.customerName, c.phone || "-", c.email || "-", c.displayAddress || c.address || "-"];
+                            });
+                            downloadExcel(
+                              "ALL",
+                              "Customer_List",
+                              ["ID Customer", "Nama", "Telepon", "Email", "Alamat"],
+                              rows
+                            );
+                          }}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs"
+                        >
+                          📊 Ekspor Excel
+                        </button>
                       </div>
                     </div>
-                  );
-                })()}
 
-                {/* 5.2 REPORT DO */}
-                {reportSubTab === "do" && (() => {
-                  const filtered = deliveryOrders.filter((d) => {
-                    if (reportStartDate && d.date < reportStartDate) return false;
-                    if (reportEndDate && d.date > reportEndDate) return false;
-                    return true;
-                  });
-
-                  const exportFlattenedData = filtered.flatMap((d) =>
-                    (d.items && d.items.length > 0 ? d.items : [{ sku: "-", itemName: "-", qty: d.totalPcs || 0 }]).map((it: any) => ({
-                      date: d.date,
-                      doId: d.doId,
-                      soId: d.soId,
-                      recipientName: d.recipientName,
-                      sku: it.sku || "-",
-                      itemName: it.itemName || "-",
-                      qty: it.qty || 0,
-                      expedition: d.expedition,
-                    }))
-                  );
-
-                  return (
-                    <div className="space-y-3">
-                      <ReportExportControls
-                        reportTitle="Laporan Delivery Order"
-                        startDate={reportStartDate}
-                        endDate={reportEndDate}
-                        onStartDateChange={setReportStartDate}
-                        onEndDateChange={setReportEndDate}
-                        data={exportFlattenedData}
-                        columns={[
-                          { header: "Tanggal", dataKey: "date" },
-                          { header: "No DO", dataKey: "doId" },
-                          { header: "Ref SO", dataKey: "soId" },
-                          { header: "Penerima", dataKey: "recipientName" },
-                          { header: "SKU", dataKey: "sku" },
-                          { header: "Nama Produk", dataKey: "itemName" },
-                          { header: "Qty Pcs", dataKey: "qty" },
-                          { header: "Ekspedisi", dataKey: "expedition" },
-                        ]}
-                      />
-                      <div className="overflow-x-auto text-xs">
-                        <table className="w-full text-left">
-                          <thead className="bg-rose-50 text-rose-900 font-bold">
-                            <tr><th className="p-2">No DO</th><th className="p-2">Ref SO</th><th className="p-2">Tanggal</th><th className="p-2">Penerima</th><th className="p-2">Total Pcs</th><th className="p-2">Ekspedisi</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-rose-50">
-                            {filtered.map((d) => (
-                              <tr key={d.id}><td className="p-2 font-mono font-bold">{d.doId}</td><td className="p-2 font-mono">{d.soId}</td><td className="p-2">{d.date}</td><td className="p-2">{d.recipientName}</td><td className="p-2 font-bold">{d.totalPcs} pcs</td><td className="p-2">{d.expedition}</td></tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                    <div className="overflow-x-auto text-xs">
+                      <table className="w-full text-left">
+                        <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                          <tr>
+                            <th className="p-2.5">ID Customer</th>
+                            <th className="p-2.5">Nama Customer</th>
+                            <th className="p-2.5">No. Telepon</th>
+                            <th className="p-2.5">Email</th>
+                            <th className="p-2.5">Alamat Pengiriman</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-rose-50">
+                          {customers.map((c, idx) => {
+                            const determinedId = c.customerId?.startsWith("CUST-") ? c.customerId : `CUST-${String(idx + 1).padStart(4, "0")}`;
+                            return (
+                              <tr key={c.id}>
+                                <td className="p-2.5 font-mono font-bold text-rose-900">{determinedId}</td>
+                                <td className="p-2.5 font-bold">{c.customerName}</td>
+                                <td className="p-2.5 font-mono">{c.phone || "-"}</td>
+                                <td className="p-2.5">{c.email || "-"}</td>
+                                <td className="p-2.5 max-w-sm truncate">{c.displayAddress || c.address || "-"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
-                  );
-                })()}
+                  </div>
+                )}
 
-                {/* 5.3 REPORT PO */}
-                {reportSubTab === "po" && (() => {
-                  const filtered = purchaseOrders.filter((po) => {
-                    if (reportStartDate && po.poDate < reportStartDate) return false;
-                    if (reportEndDate && po.poDate > reportEndDate) return false;
-                    return true;
-                  });
-
-                  const exportFlattenedData = filtered.flatMap((po) =>
-                    (po.items && po.items.length > 0 ? po.items : [{ sku: "-", itemName: "-", qty: 0, purchasingPrice: 0, subtotal: 0 }]).map((it: any) => ({
-                      date: po.poDate,
-                      poId: po.poId || po.documentNo,
-                      supplier: po.supplier,
-                      sku: it.sku || "-",
-                      itemName: it.itemName || "-",
-                      qty: it.qty || 0,
-                      purchasingPrice: it.purchasingPrice || 0,
-                      subtotal: it.subtotal || 0,
-                      status: po.status,
-                    }))
-                  );
-
-                  return (
-                    <div className="space-y-3">
-                      <ReportExportControls
-                        reportTitle="Laporan Purchase Order"
-                        startDate={reportStartDate}
-                        endDate={reportEndDate}
-                        onStartDateChange={setReportStartDate}
-                        onEndDateChange={setReportEndDate}
-                        data={exportFlattenedData}
-                        columns={[
-                          { header: "Tanggal", dataKey: "date" },
-                          { header: "No PO", dataKey: "poId" },
-                          { header: "Supplier", dataKey: "supplier" },
-                          { header: "SKU", dataKey: "sku" },
-                          { header: "Nama Produk", dataKey: "itemName" },
-                          { header: "Qty Pesan", dataKey: "qty" },
-                          { header: "HPP (Beli)", dataKey: "purchasingPrice", format: formatRupiah },
-                          { header: "Subtotal", dataKey: "subtotal", format: formatRupiah },
-                          { header: "Status", dataKey: "status" },
-                        ]}
-                      />
-                      <div className="overflow-x-auto text-xs">
-                        <table className="w-full text-left">
-                          <thead className="bg-rose-50 text-rose-900 font-bold">
-                            <tr><th className="p-2">No PO</th><th className="p-2">Tanggal</th><th className="p-2">Supplier</th><th className="p-2">Total Nilai</th><th className="p-2">Status</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-rose-50">
-                            {filtered.map((po) => (
-                              <tr key={po.id}><td className="p-2 font-mono font-bold">{po.poId}</td><td className="p-2">{po.poDate}</td><td className="p-2">{po.supplier}</td><td className="p-2 font-bold text-blue-600">{formatRupiah(Number(po.total || 0))}</td><td className="p-2 font-bold">{po.status}</td></tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* 5.4 REPORT RECEIVING */}
-                {reportSubTab === "receiving" && (() => {
-                  const filtered = receivings.filter((r) => {
-                    if (reportStartDate && r.date < reportStartDate) return false;
-                    if (reportEndDate && r.date > reportEndDate) return false;
-                    return true;
-                  });
-
-                  const exportFlattenedData = filtered.flatMap((r) =>
-                    (r.items && r.items.length > 0 ? r.items : [{ sku: "-", itemName: "-", qtyReceived: 0 }]).map((it: any) => ({
-                      date: r.date,
-                      receivingId: r.receivingId,
-                      poId: r.poId,
-                      supplier: r.supplier || "-",
-                      sku: it.sku || "-",
-                      itemName: it.itemName || "-",
-                      qtyReceived: it.qtyReceived || 0,
-                      createdBy: r.createdBy,
-                      notes: r.notes || "-",
-                    }))
-                  );
-
-                  return (
-                    <div className="space-y-3">
-                      <ReportExportControls
-                        reportTitle="Laporan Penerimaan Barang (Receiving)"
-                        startDate={reportStartDate}
-                        endDate={reportEndDate}
-                        onStartDateChange={setReportStartDate}
-                        onEndDateChange={setReportEndDate}
-                        data={exportFlattenedData}
-                        columns={[
-                          { header: "Tanggal", dataKey: "date" },
-                          { header: "No Receiving", dataKey: "receivingId" },
-                          { header: "Ref PO", dataKey: "poId" },
-                          { header: "Supplier", dataKey: "supplier" },
-                          { header: "SKU", dataKey: "sku" },
-                          { header: "Nama Produk", dataKey: "itemName" },
-                          { header: "Qty Diterima", dataKey: "qtyReceived" },
-                          { header: "Petugas", dataKey: "createdBy" },
-                          { header: "Catatan", dataKey: "notes" },
-                        ]}
-                      />
-                      <div className="overflow-x-auto text-xs">
-                        <table className="w-full text-left">
-                          <thead className="bg-rose-50 text-rose-900 font-bold">
-                            <tr><th className="p-2">No Receiving</th><th className="p-2">Ref PO</th><th className="p-2">Tanggal</th><th className="p-2">Petugas</th><th className="p-2">Catatan</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-rose-50">
-                            {filtered.map((r) => (
-                              <tr key={r.id}><td className="p-2 font-mono font-bold">{r.receivingId}</td><td className="p-2 font-mono">{r.poId}</td><td className="p-2">{r.date}</td><td className="p-2">{r.createdBy}</td><td className="p-2">{r.notes || "-"}</td></tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* 5.5 REPORT STOCK OPNAME */}
-                {reportSubTab === "opname" && (() => {
-                  const filtered = stockOpnames.filter((sop) => {
-                    if (reportStartDate && sop.opnameDate < reportStartDate) return false;
-                    if (reportEndDate && sop.opnameDate > reportEndDate) return false;
-                    return true;
-                  });
-
-                  const exportFlattenedData = filtered.flatMap((sop) =>
-                    (sop.items && sop.items.length > 0 ? sop.items : [{ skuCode: "-", itemName: "-", systemQtySnapshot: 0, physicalQty: 0, adjustmentQty: 0 }]).map((it: any) => ({
-                      date: sop.opnameDate,
-                      documentNo: sop.documentNo || sop.sopId,
-                      sku: it.skuCode || it.skuId || "-",
-                      itemName: it.itemName || "-",
-                      systemQty: it.systemQtySnapshot ?? 0,
-                      physicalQty: it.physicalQty ?? "-",
-                      selisih: it.adjustmentQty ?? 0,
-                      status: sop.status,
-                      initializedBy: sop.initializedBy,
-                    }))
-                  );
-
-                  return (
-                    <div className="space-y-3">
-                      <ReportExportControls
-                        reportTitle="Laporan Stock Opname"
-                        startDate={reportStartDate}
-                        endDate={reportEndDate}
-                        onStartDateChange={setReportStartDate}
-                        onEndDateChange={setReportEndDate}
-                        data={exportFlattenedData}
-                        columns={[
-                          { header: "Tanggal", dataKey: "date" },
-                          { header: "No Dokumen", dataKey: "documentNo" },
-                          { header: "SKU", dataKey: "sku" },
-                          { header: "Nama Produk", dataKey: "itemName" },
-                          { header: "Qty Sistem", dataKey: "systemQty" },
-                          { header: "Qty Fisik", dataKey: "physicalQty" },
-                          { header: "Selisih", dataKey: "selisih" },
-                          { header: "Status", dataKey: "status" },
-                          { header: "Inisiator", dataKey: "initializedBy" },
-                        ]}
-                      />
-                      <div className="overflow-x-auto text-xs">
-                        <table className="w-full text-left">
-                          <thead className="bg-rose-50 text-rose-900 font-bold">
-                            <tr><th className="p-2">No Dokumen</th><th className="p-2">Tanggal</th><th className="p-2">Total SKU</th><th className="p-2">Status</th><th className="p-2">Petugas Inisiator</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-rose-50">
-                            {filtered.map((sop) => (
-                              <tr key={sop.id}><td className="p-2 font-mono font-bold">{sop.documentNo || sop.sopId}</td><td className="p-2">{sop.opnameDate}</td><td className="p-2 font-bold">{sop.totalSku} SKU</td><td className="p-2 font-bold">{sop.status}</td><td className="p-2">{sop.initializedBy}</td></tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* 5.6 REPORT STOCK */}
+                {/* 5.7 REPORT STOCK & SALES */}
                 {reportSubTab === "stock" && (
                   <div className="space-y-3">
-                    <ReportExportControls
-                      reportTitle="Laporan Saldo Persediaan Produk"
-                      startDate=""
-                      endDate=""
-                      onStartDateChange={() => {}}
-                      onEndDateChange={() => {}}
-                      data={products.map((p) => ({
-                        date: new Date().toISOString().split("T")[0],
-                        sku: p.sku,
-                        itemName: p.itemName,
-                        familyCode: p.familyCode || "-",
-                        stock: p.stock || 0,
-                        purchasingPrice: p.purchasingPrice || 0,
-                        netPrice: p.netPrice || 0,
-                      }))}
-                      columns={[
-                        { header: "Tanggal Snapshot", dataKey: "date" },
-                        { header: "SKU", dataKey: "sku" },
-                        { header: "Nama Produk", dataKey: "itemName" },
-                        { header: "Family", dataKey: "familyCode" },
-                        { header: "Stok Fisik", dataKey: "stock" },
-                        { header: "HPP (Beli)", dataKey: "purchasingPrice", format: formatRupiah },
-                        { header: "Harga Jual", dataKey: "netPrice", format: formatRupiah },
-                      ]}
-                    />
+                    <span className="text-xs font-bold text-rose-950 uppercase">Laporan Saldo Persediaan Produk</span>
                     <div className="overflow-x-auto text-xs">
                       <table className="w-full text-left">
                         <thead className="bg-rose-50 text-rose-900 font-bold">
@@ -2813,91 +2683,23 @@ export default function Page() {
                   </div>
                 )}
 
-                {/* 5.7 REPORT SALES */}
-                {reportSubTab === "sales" && (() => {
-                  const filtered = deliveryOrders.filter((d) => {
-                    if (reportStartDate && d.date < reportStartDate) return false;
-                    if (reportEndDate && d.date > reportEndDate) return false;
-                    return true;
-                  });
-
-                  const exportItemData = filtered.flatMap((d) => {
-                    const itemList = Array.isArray(d?.items) ? d.items : [];
-                    return itemList.map((it: any) => ({
-                      date: d?.date ?? "-",
-                      doId: d?.doId ?? "-",
-                      recipientName: d?.recipientName ?? "-",
-                      sku: it?.sku ?? "-",
-                      itemName: it?.itemName ?? "-",
-                      qty: typeof it?.qty === "number" ? it.qty : 1,
-                      price: typeof it?.price === "number" ? it.price : 0,
-                      subtotal: (typeof it?.qty === "number" ? it.qty : 1) * (typeof it?.price === "number" ? it.price : 0),
-                      expedition: d?.expedition ?? "-",
-                    }));
-                  });
-
-                  return (
-                    <div className="space-y-3">
-                      <div className="flex gap-2 items-center mb-1 text-xs">
-                        <span className="font-semibold text-rose-950">Tipe Tampilan:</span>
-                        <select value={salesReportType} onChange={(e) => setSalesReportType(e.target.value as any)} className="p-1 border rounded bg-white outline-none">
-                          <option value="summary">Summary Per DO</option>
-                          <option value="day">By Day</option>
-                          <option value="item">By Item Terjual (Detail Analisis)</option>
-                        </select>
-                      </div>
-
-                      <ReportExportControls
-                        reportTitle={`Laporan Penjualan (${salesReportType.toUpperCase()})`}
-                        startDate={reportStartDate}
-                        endDate={reportEndDate}
-                        onStartDateChange={setReportStartDate}
-                        onEndDateChange={setReportEndDate}
-                        data={salesReportType === "item" ? exportItemData : filtered.map((d) => ({
-                          date: d.date,
-                          doId: d.doId,
-                          recipientName: d.recipientName,
-                          totalPcs: d.totalPcs || 0,
-                          totalNilai: (d.items || []).reduce((acc: number, it: any) => acc + (it.subtotal || 0), 0),
-                        }))}
-                        columns={
-                          salesReportType === "item"
-                            ? [
-                                { header: "Tanggal", dataKey: "date" },
-                                { header: "No DO", dataKey: "doId" },
-                                { header: "SKU", dataKey: "sku" },
-                                { header: "Nama Produk", dataKey: "itemName" },
-                                { header: "Qty Terjual", dataKey: "qty" },
-                                { header: "Harga Satuan", dataKey: "price", format: formatRupiah },
-                                { header: "Subtotal", dataKey: "subtotal", format: formatRupiah },
-                                { header: "Penerima", dataKey: "recipientName" },
-                                { header: "Ekspedisi", dataKey: "expedition" },
-                              ]
-                            : [
-                                { header: "Tanggal", dataKey: "date" },
-                                { header: "No DO", dataKey: "doId" },
-                                { header: "Penerima", dataKey: "recipientName" },
-                                { header: "Total Pcs", dataKey: "totalPcs" },
-                                { header: "Total Nilai", dataKey: "totalNilai", format: formatRupiah },
-                              ]
-                        }
-                      />
-
-                      <div className="overflow-x-auto text-xs">
-                        <table className="w-full text-left">
-                          <thead className="bg-rose-50 text-rose-900 font-bold">
-                            <tr><th className="p-2">No DO / Tanggal</th><th className="p-2">Penerima / SKU</th><th className="p-2">Total Pcs</th><th className="p-2">Total Nilai</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-rose-50">
-                            {filtered.map((d) => (
-                              <tr key={d.id}><td className="p-2 font-mono font-bold">{d.doId} ({d.date})</td><td className="p-2">{d.recipientName}</td><td className="p-2 font-bold">{d.totalPcs} pcs</td><td className="p-2 font-bold text-emerald-600">{formatRupiah((d.items || []).reduce((acc: number, it: any) => acc + (it.subtotal || 0), 0))}</td></tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                {reportSubTab === "sales" && (
+                  <div className="space-y-3">
+                    <span className="text-xs font-bold text-rose-950 uppercase">Laporan Penjualan (Sales)</span>
+                    <div className="overflow-x-auto text-xs">
+                      <table className="w-full text-left">
+                        <thead className="bg-rose-50 text-rose-900 font-bold">
+                          <tr><th className="p-2">No DO / Tanggal</th><th className="p-2">Penerima</th><th className="p-2">Total Pcs</th><th className="p-2">Total Nilai</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-rose-50">
+                          {deliveryOrders.map((d) => (
+                            <tr key={d.id}><td className="p-2 font-mono font-bold">{d.doId} ({d.date})</td><td className="p-2">{d.recipientName}</td><td className="p-2 font-bold">{d.totalPcs} pcs</td><td className="p-2 font-bold text-emerald-600">{formatRupiah((d.items || []).reduce((acc: number, it: any) => acc + (it.subtotal || 0), 0))}</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  );
-                })()}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2905,6 +2707,65 @@ export default function Page() {
           {/* TAB 6: SETTINGS */}
           {currentTab === "settings" && (
             <div className="max-w-3xl bg-white rounded-2xl border border-rose-100 p-6 shadow-sm space-y-6">
+              {/* HARDWARE PRINTER BLUETOOTH */}
+              <div className="border-b border-rose-100 pb-6 space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-rose-950 uppercase">Hardware Printer Thermal Bluetooth</h3>
+                  <p className="text-xs text-rose-500">Pindai dan hubungkan printer Bluetooth untuk direct printing ESC/POS Label DO</p>
+                </div>
+
+                <div className="p-4 bg-rose-50/60 rounded-xl border border-rose-200 space-y-3 text-xs">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="font-semibold text-rose-900">Perangkat Bluetooth:</span>
+                      <div className="font-bold text-rose-950 text-sm mt-0.5">{storeSettings.btPrinterDeviceName || btStatus}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleScanBluetoothPrinter}
+                      className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-lg font-bold shadow-xs"
+                    >
+                      🔍 Cari Printer Bluetooth
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div>
+                      <label className="font-semibold block mb-1">Ukuran Kertas Thermal Struk / Label</label>
+                      <select
+                        value={storeSettings.labelSize}
+                        onChange={(e) => setStoreSettings({ ...storeSettings, labelSize: e.target.value })}
+                        className="w-full p-2 border border-rose-200 rounded-lg font-bold text-[#BE185D] outline-none bg-white"
+                      >
+                        <option value="58mm">58mm (Mini Thermal)</option>
+                        <option value="80mm">80mm (Standard)</option>
+                        <option value="100mm">100mm (Label Resi)</option>
+                      </select>
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            setLoading(true);
+                            await setDoc(doc(db, "settings", "store_info"), storeSettings, { merge: true });
+                            showAlert("Pengaturan printer dan toko berhasil disimpan!", "Sukses");
+                          } catch (e: any) {
+                            showAlert(e.message || "Gagal menyimpan pengaturan.");
+                          } finally {
+                            setLoading(false);
+                          }
+                        }}
+                        className="w-full py-2 bg-[#BE185D] hover:bg-[#9D174D] text-white rounded-lg font-bold shadow"
+                      >
+                        💾 Simpan Pengaturan Printer
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ALAMAT ASAL PENGIRIMAN TOKO */}
               <div className="border-b border-rose-100 pb-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
@@ -3015,31 +2876,6 @@ export default function Page() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="font-semibold block mb-1">Kode Pos</label>
-                      <input
-                        type="text"
-                        placeholder="40377"
-                        value={storeSettings.postalCode}
-                        onChange={(e) => setStoreSettings({ ...storeSettings, postalCode: e.target.value })}
-                        className="w-full p-2 border border-rose-200 rounded-lg outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold block mb-1">Ukuran Kertas Thermal Struk</label>
-                      <select
-                        value={storeSettings.labelSize}
-                        onChange={(e) => setStoreSettings({ ...storeSettings, labelSize: e.target.value })}
-                        className="w-full p-2 border border-rose-200 rounded-lg font-bold text-[#BE185D] outline-none bg-white"
-                      >
-                        <option value="58mm">58mm (Mini Thermal)</option>
-                        <option value="80mm">80mm (Standard)</option>
-                        <option value="100mm">100mm (Label Resi)</option>
-                      </select>
-                    </div>
-                  </div>
-
                   <div className="p-3 bg-rose-50/70 border border-rose-100 rounded-lg text-xs space-y-1">
                     <div className="font-bold text-rose-950">Alamat Terformat:</div>
                     <div className="text-rose-800">{storeSettings.storeAddress || "Belum disimpan"}</div>
@@ -3057,15 +2893,15 @@ export default function Page() {
               </div>
 
               {/* PENGATURAN API KEY RAJAONGKIR */}
-              <div className="space-y-4">
+              <div className="space-y-4 text-xs">
                 <div>
                   <h3 className="text-sm font-bold text-rose-950 uppercase">Pengaturan API Key RajaOngkir (Komerce v1)</h3>
-                  <p className="text-xs text-rose-500">Uji koneksi terlebih dahulu. Tombol simpan hanya aktif jika API berhasil bekerja.</p>
+                  <p className="text-rose-500">Uji koneksi terlebih dahulu. Tombol simpan hanya aktif jika API berhasil bekerja.</p>
                 </div>
 
-                <div className="space-y-3 text-xs">
+                <div className="space-y-3">
                   <div>
-                    <label className="font-semibold block mb-1 text-slate-700">Input RajaOngkir API Key Baru</label>
+                    <label className="font-semibold block mb-1 text-slate-700">Input RajaOngkir API Key</label>
                     <div className="flex gap-2">
                       <input
                         type="text"
@@ -3107,7 +2943,7 @@ export default function Page() {
                       type="button"
                       disabled={!apiKeyTestedSuccess || isSavingApiKey}
                       onClick={handleConfirmAndSaveApiKey}
-                      className="px-5 py-2.5 bg-[#BE185D] hover:bg-[#9D174D] disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow transition"
+                      className="px-5 py-2.5 bg-[#BE185D] hover:bg-[#9D174D] disabled:bg-slate-300 text-white rounded-xl text-xs font-bold shadow transition"
                     >
                       {isSavingApiKey ? "Menyimpan..." : "Konfirmasi & Simpan API Key"}
                     </button>
@@ -3117,47 +2953,53 @@ export default function Page() {
             </div>
           )}
 
-          {/* TAB 7: USER MANAGEMENT & SUPPLIERS */}
-          {currentTab === "users" && isRootAdmin && (
+          {/* TAB 7: HUMAN (STAFF CRUD, SUPPLIER CRUD, & CUSTOMER CRUD) */}
+          {currentTab === "human" && isRootAdmin && (
             <div className="space-y-4">
               <div className="flex gap-2 border-b border-rose-200 pb-2">
                 <button
                   type="button"
-                  onClick={() => setUserSubTab("staff")}
+                  onClick={() => setHumanSubTab("staff")}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                    userSubTab === "staff" ? "bg-[#BE185D] text-white shadow" : "bg-white text-rose-900 border border-rose-200"
+                    humanSubTab === "staff" ? "bg-[#BE185D] text-white shadow" : "bg-white text-rose-900 border border-rose-200"
                   }`}
                 >
                   Staff Gudang ({usersList.length})
                 </button>
                 <button
                   type="button"
-                  onClick={() => setUserSubTab("suppliers")}
+                  onClick={() => setHumanSubTab("suppliers")}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                    userSubTab === "suppliers" ? "bg-[#BE185D] text-white shadow" : "bg-white text-rose-900 border border-rose-200"
+                    humanSubTab === "suppliers" ? "bg-[#BE185D] text-white shadow" : "bg-white text-rose-900 border border-rose-200"
                   }`}
                 >
                   Supplier Rekanan ({suppliers.length})
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setHumanSubTab("customers")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    humanSubTab === "customers" ? "bg-[#BE185D] text-white shadow" : "bg-white text-rose-900 border border-rose-200"
+                  }`}
+                >
+                  Daftar Customer ({customers.length})
+                </button>
               </div>
 
-              {/* 7.1 STAFF GUDANG */}
-              {userSubTab === "staff" && (
+              {/* 7.1 STAFF GUDANG (CRUD LENGKAP AUTO ST-xx) */}
+              {humanSubTab === "staff" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
                   <div className="flex justify-between items-center">
                     <div>
-                      <span className="text-xs font-bold text-rose-950 uppercase">Manajemen Pengguna (User Management)</span>
-                      <p className="text-[11px] text-slate-500">Hanya Root Admin yang berhak mendaftarkan user baru dengan role Staff</p>
+                      <span className="text-xs font-bold text-rose-950 uppercase">Daftar Akun Staff (ST-xx)</span>
+                      <p className="text-[11px] text-slate-500">Hanya Root Admin yang dapat mengelola akun operasional staf</p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        setUserForm({ fullName: "", userId: "", password: "" });
-                        setIsAddUserModalOpen(true);
-                      }}
+                      onClick={handleOpenAddStaff}
                       className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
                     >
-                      + Tambah User Baru
+                      + Tambah Staff Baru
                     </button>
                   </div>
 
@@ -3165,30 +3007,118 @@ export default function Page() {
                     <table className="w-full text-left">
                       <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
                         <tr>
+                          <th className="p-2.5">ID Staff</th>
                           <th className="p-2.5">User ID / Username</th>
                           <th className="p-2.5">Nama Lengkap</th>
                           <th className="p-2.5">Role</th>
-                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5 text-right">Aksi</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-rose-50">
-                        {usersList.map((u) => (
-                          <tr key={u.id} className="hover:bg-rose-50/30 transition">
-                            <td className="p-2.5 font-mono font-bold text-rose-900">{u.userId || u.username || u.id}</td>
-                            <td className="p-2.5 font-semibold text-rose-950">{u.fullName || u.name || "-"}</td>
-                            <td className="p-2.5">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                String(u.role).toLowerCase().includes("root")
-                                  ? "bg-amber-100 text-amber-800"
-                                  : "bg-blue-100 text-blue-800"
-                              }`}>
-                                {u.role || "Staff Gudang"}
-                              </span>
-                            </td>
-                            <td className="p-2.5">
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                Aktif
-                              </span>
+                        {usersList.map((u, idx) => {
+                          const displayStaffId = u.staffId || `ST-${String(idx + 1).padStart(2, "0")}`;
+                          const isRoot = u.userId === "admin" || String(u.role).toLowerCase().includes("root");
+                          return (
+                            <tr key={u.id || u.userId}>
+                              <td className="p-2.5 font-mono font-bold text-rose-900">{displayStaffId}</td>
+                              <td className="p-2.5 font-mono text-slate-700">{u.userId || u.username}</td>
+                              <td className="p-2.5 font-semibold text-rose-950">{u.fullName || u.name}</td>
+                              <td className="p-2.5">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isRoot ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"}`}>
+                                  {u.role || "Staff Gudang"}
+                                </span>
+                              </td>
+                              <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                                {!isRoot && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setStaffForm({
+                                          staffId: displayStaffId,
+                                          fullName: u.fullName || u.name || "",
+                                          userId: u.userId || u.username || "",
+                                          password: u.password || "",
+                                        });
+                                        setStaffModalMode("edit");
+                                        setIsStaffModalOpen(true);
+                                      }}
+                                      className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold"
+                                    >
+                                      ✏️ Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteStaff(u)}
+                                      className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
+                                    >
+                                      Hapus
+                                    </button>
+                                  </>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 7.2 SUPPLIER REKANAN (CRUD LENGKAP) */}
+              {humanSubTab === "suppliers" && (
+                <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-rose-950 uppercase">Daftar Supplier Rekanan (SUPP-XXXX)</span>
+                      <p className="text-[11px] text-slate-500">Kelola katalog vendor rekanan resmi</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenAddSupplier}
+                      className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                    >
+                      + Tambah Supplier Baru
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                        <tr>
+                          <th className="p-2.5">Kode Supplier</th>
+                          <th className="p-2.5">Nama Supplier</th>
+                          <th className="p-2.5">No. Handphone</th>
+                          <th className="p-2.5">Alamat Lengkap</th>
+                          <th className="p-2.5 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-rose-50">
+                        {suppliers.map((s) => (
+                          <tr key={s.id || s.supplierId}>
+                            <td className="p-2.5 font-mono font-bold text-rose-900">{s.supplierId || s.documentNo}</td>
+                            <td className="p-2.5 font-bold">{s.supplierName}</td>
+                            <td className="p-2.5 font-mono">{s.phone}</td>
+                            <td className="p-2.5">{s.address}</td>
+                            <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSupplier(s);
+                                  setIsSupplierModalOpen(true);
+                                }}
+                                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold"
+                              >
+                                ✏️ Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSupplier(s)}
+                                className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
+                              >
+                                Hapus
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -3198,112 +3128,81 @@ export default function Page() {
                 </div>
               )}
 
-              {/* 7.2 SUPPLIER REKANAN & SKU UTILITY */}
-              {userSubTab === "suppliers" && (
-                <div className="space-y-4">
-                  {/* UTILITY PENONAKTIFAN SKU LAMA */}
-                  <div className="bg-gradient-to-r from-rose-50 to-amber-50 rounded-xl border border-rose-200 p-4 flex flex-wrap justify-between items-center gap-3">
+              {/* 7.3 DAFTAR CUSTOMER CRUD */}
+              {humanSubTab === "customers" && (
+                <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
+                  <div className="flex justify-between items-center">
                     <div>
-                      <div className="text-xs font-bold text-rose-950 flex items-center gap-1.5">
-                        <span>🛡️</span>
-                        <span>Utilitas Penataan Katalog SKU Lama (Khusus ROOT_ADMIN)</span>
-                      </div>
-                      <p className="text-[11px] text-rose-700 mt-0.5">
-                        Total SKU Aktif: <b>{products.filter((p) => p.active !== false).length} SKU</b> | SKU Nonaktif: <b>{products.filter((p) => p.active === false).length} SKU</b> (Siap diaktifkan jika supplier telah ditetapkan: <b>{products.filter((p) => p.active === false && p.supplierId).length} SKU</b>)
-                      </p>
+                      <span className="text-xs font-bold text-rose-950 uppercase">Kelola Data Customer (CUST-XXXX)</span>
+                      <p className="text-[11px] text-slate-500">Basis data pelanggan dan tujuan pengiriman</p>
                     </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsDeactivateSkuModalOpen(true)}
-                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
-                      >
-                        ⚡ Nonaktifkan Seluruh SKU Lama
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsReactivateSkuModalOpen(true)}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
-                      >
-                        ✓ Pulihkan / Aktifkan SKU Bersupplier
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomerModalMode("create");
+                        setCustomerForm({ customerId: "", customerName: "", phone: "", email: "", address: "", displayAddress: "" });
+                        setIsCustomerModalOpen(true);
+                      }}
+                      className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
+                    >
+                      + Tambah Customer Baru
+                    </button>
                   </div>
 
-                  {/* TABEL SUPPLIER */}
-                  <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <span className="text-xs font-bold text-rose-950 uppercase">Daftar Supplier Rekanan</span>
-                        <p className="text-[11px] text-slate-500">Katalog supplier dengan kode unik berurutan SUPP-XXXX</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingSupplier(null);
-                          setIsSupplierModalOpen(true);
-                        }}
-                        className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
-                      >
-                        + Tambah Supplier Baru
-                      </button>
-                    </div>
-
-                    <div className="overflow-x-auto text-xs">
-                      <table className="w-full text-left">
-                        <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
-                          <tr>
-                            <th className="p-2.5">Kode Supplier</th>
-                            <th className="p-2.5">Nama Supplier</th>
-                            <th className="p-2.5">No. Handphone</th>
-                            <th className="p-2.5">Alamat Lengkap</th>
-                            <th className="p-2.5">Total SKU Terkait</th>
-                            <th className="p-2.5 text-right">Aksi</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-rose-50">
-                          {suppliers.map((s) => {
-                            const linkedCount = products.filter((p) => p.supplierId === s.supplierId || p.supplierId === s.id).length;
-                            return (
-                              <tr key={s.id || s.supplierId} className="hover:bg-rose-50/30 transition">
-                                <td className="p-2.5 font-mono font-bold text-rose-900">{s.supplierId || s.documentNo}</td>
-                                <td className="p-2.5 font-bold text-rose-950">{s.supplierName}</td>
-                                <td className="p-2.5 font-mono text-slate-600">{s.phone}</td>
-                                <td className="p-2.5 max-w-xs truncate" title={s.address}>{s.address}</td>
-                                <td className="p-2.5 font-bold text-[#BE185D]">{linkedCount} SKU</td>
-                                <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEditingSupplier(s);
-                                      setIsSupplierModalOpen(true);
-                                    }}
-                                    className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold"
-                                  >
-                                    ✏️ Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteSupplier(s)}
-                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
-                                  >
-                                    Hapus
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                          {suppliers.length === 0 && (
-                            <tr>
-                              <td colSpan={6} className="p-5 text-center text-slate-400">
-                                Belum ada supplier yang terdaftar.
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                        <tr>
+                          <th className="p-2.5">ID Customer</th>
+                          <th className="p-2.5">Nama Customer</th>
+                          <th className="p-2.5">No. Telepon / WA</th>
+                          <th className="p-2.5">Email</th>
+                          <th className="p-2.5">Alamat Pengiriman</th>
+                          <th className="p-2.5 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-rose-50">
+                        {customers.map((c, idx) => {
+                          const determinedId = c.customerId?.startsWith("CUST-") ? c.customerId : `CUST-${String(idx + 1).padStart(4, "0")}`;
+                          return (
+                            <tr key={c.id}>
+                              <td className="p-2.5 font-mono font-bold text-rose-900">{determinedId}</td>
+                              <td className="p-2.5 font-bold">{c.customerName}</td>
+                              <td className="p-2.5 font-mono">{c.phone || "-"}</td>
+                              <td className="p-2.5">{c.email || "-"}</td>
+                              <td className="p-2.5 max-w-xs truncate">{c.displayAddress || c.address || "-"}</td>
+                              <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCustomerModalMode("edit");
+                                    setCustomerForm({
+                                      customerId: c.id || c.customerId,
+                                      customerName: c.customerName,
+                                      phone: c.phone || "",
+                                      email: c.email || "",
+                                      address: c.address || "",
+                                      displayAddress: c.displayAddress || c.address || "",
+                                    });
+                                    setIsCustomerModalOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold"
+                                >
+                                  ✏️ Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCustomer(c)}
+                                  className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold"
+                                >
+                                  Hapus
+                                </button>
                               </td>
                             </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
@@ -3312,32 +3211,430 @@ export default function Page() {
         </section>
       </main>
 
-      {/* POP-UP MODAL KONFIRMASI UJI API KEY */}
-      {isApiSuccessModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-emerald-200 text-center">
-            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-3">
-              ✓
+      {/* MODAL DETAIL SO & ACTION */}
+      {isSoDetailModalOpen && selectedSoDetail && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-60 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl border border-rose-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start border-b border-rose-100 pb-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-rose-950">Detail Sales Order: {selectedSoDetail.soId}</h3>
+                <span className="text-xs text-rose-600 font-medium">Status: <b>{selectedSoDetail.status}</b></span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSoDetailModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+              >
+                &times;
+              </button>
             </div>
-            <h3 className="text-base font-bold text-emerald-950 mb-1">API Key Terverifikasi!</h3>
-            <p className="text-xs text-emerald-800 mb-6 leading-relaxed">
-              Koneksi ke RajaOngkir Komerce berhasil dan API Key dapat bekerja dengan baik. Tekan tombol OK untuk mengaktifkan tombol konfirmasi penyimpanan.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setApiKeyTestedSuccess(true);
-                setIsApiSuccessModalOpen(false);
-              }}
-              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow"
-            >
-              OK
-            </button>
+
+            <div className="grid grid-cols-2 gap-3 text-xs mb-4 bg-rose-50/50 p-3 rounded-xl border border-rose-100">
+              <div>
+                <div className="text-slate-500">Customer:</div>
+                <div className="font-bold text-rose-950">{selectedSoDetail.customerName} ({selectedSoDetail.phone})</div>
+                <div className="text-[11px] text-slate-600 mt-1">{selectedSoDetail.address}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Pengiriman:</div>
+                <div className="font-bold">{selectedSoDetail.shippingServiceName || selectedSoDetail.expedition}</div>
+                <div className="text-emerald-700 font-bold">Ongkir: {formatRupiah(Number(selectedSoDetail.shippingCost || 0))}</div>
+                <div className="text-rose-900 font-bold text-sm mt-1">Total: {formatRupiah(Number(selectedSoDetail.total || 0))}</div>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <span className="text-xs font-bold text-rose-950 block mb-2">Rincian SKU Barang:</span>
+              <table className="w-full text-xs text-left border border-rose-100 rounded-lg overflow-hidden">
+                <thead className="bg-rose-50 text-rose-900 font-bold">
+                  <tr>
+                    <th className="p-2">SKU</th>
+                    <th className="p-2">Nama Barang</th>
+                    <th className="p-2 text-center">Qty</th>
+                    <th className="p-2 text-right">Harga</th>
+                    <th className="p-2 text-right">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rose-50">
+                  {(selectedSoDetail.items || []).map((it: any, i: number) => (
+                    <tr key={i}>
+                      <td className="p-2 font-mono font-bold text-rose-900">{it.sku}</td>
+                      <td className="p-2">{it.itemName}</td>
+                      <td className="p-2 text-center font-bold">{it.qty || it.quantity}</td>
+                      <td className="p-2 text-right">{formatRupiah(Number(it.price || 0))}</td>
+                      <td className="p-2 text-right font-bold">{formatRupiah(Number(it.subtotal || 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-rose-100">
+              <button
+                type="button"
+                onClick={() => {
+                  const msg = buildWhatsAppMessage(selectedSoDetail);
+                  const clean = String(selectedSoDetail.phone || "").replace(/[^0-9]/g, "");
+                  const phoneNum = clean.startsWith("0") ? "62" + clean.slice(1) : clean;
+                  window.open(`https://api.whatsapp.com/send?phone=${phoneNum}&text=${encodeURIComponent(msg)}`, "_blank");
+                }}
+                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs"
+              >
+                💬 Kirim WA
+              </button>
+
+              {selectedSoDetail.status === "CONFIRMED" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingSoId(selectedSoDetail.soId || selectedSoDetail.id);
+                      setSoModalInitCustomer({
+                        customerName: selectedSoDetail.customerName,
+                        phone: selectedSoDetail.phone,
+                        displayAddress: selectedSoDetail.address,
+                      });
+                      setSoModalInitItems(selectedSoDetail.items || []);
+                      setSoModalInitRates(selectedSoDetail.shippingRatesSnapshot || []);
+                      setSoModalInitCost(selectedSoDetail.shippingCost || 0);
+                      setSoModalInitCourier(selectedSoDetail.shippingCourier || "");
+                      setSoModalInitService(selectedSoDetail.shippingServiceName || "");
+                      setIsSoDetailModalOpen(false);
+                      setIsSoModalOpen(true);
+                    }}
+                    className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg"
+                  >
+                    ✏️ Edit SO
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeMarkProcessing(selectedSoDetail)}
+                    className="px-3 py-2 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-lg shadow"
+                  >
+                    ⏩ PROCESSING
+                  </button>
+                </>
+              )}
+
+              {selectedSoDetail.status === "PROCESSING" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      let rates = selectedSoDetail.shippingRatesSnapshot || [];
+                      if (!rates || rates.length === 0) {
+                        rates = [{ courier: selectedSoDetail.shippingCourier || "JNE", serviceName: selectedSoDetail.shippingServiceName || "REG", cost: Number(selectedSoDetail.shippingCost || 0), etd: "1-3 Hari" }];
+                      }
+                      setTargetProcessingSo({ ...selectedSoDetail, shippingRatesSnapshot: rates });
+                      setIsEditExpeditionModalOpen(true);
+                    }}
+                    className="px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold rounded-lg"
+                  >
+                    🚚 Ganti Ekspedisi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMarkReadyToDeliver(selectedSoDetail)}
+                    className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg"
+                  >
+                    📦 READY TO DELIVER
+                  </button>
+                </>
+              )}
+
+              {selectedSoDetail.status === "READY TO DELIVER" && (
+                <button
+                  type="button"
+                  onClick={() => handleProcessDO(selectedSoDetail)}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow"
+                >
+                  🚀 Terbitkan Delivery Order (DO)
+                </button>
+              )}
+
+              {selectedSoDetail.status !== "CANCELLED" && selectedSoDetail.status !== "DELIVERY ORDER" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSoCancelTarget(selectedSoDetail);
+                    setSoCancelReason("");
+                    setIsSoCancelConfirmOpen(true);
+                  }}
+                  className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-xs"
+                >
+                  ✕ Batalkan SO
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* MODAL MODULAR */}
+      {/* MODAL STOCK OPNAME REVIEW */}
+      {isSopReviewModalOpen && reviewSopTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-60 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-4xl p-6 shadow-2xl border border-rose-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start border-b border-rose-100 pb-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-rose-950">Review Hasil Perhitungan Stock Opname</h3>
+                <p className="text-xs text-rose-600 font-mono">
+                  Dokumen: {reviewSopTarget.documentNo || reviewSopTarget.sopId} | Kode Review: SRVW-20261016-XXXX
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleExportSopReviewExcel}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1.5"
+              >
+                📊 Ekspor Excel Hasil Review
+              </button>
+            </div>
+
+            <div className="overflow-x-auto text-xs mb-4">
+              <table className="w-full text-left border border-rose-100 rounded-lg">
+                <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
+                  <tr>
+                    <th className="p-2">SKU</th>
+                    <th className="p-2">Nama Barang</th>
+                    <th className="p-2 text-center">Qty Asal</th>
+                    <th className="p-2 text-center w-28">Qty Hitung (Edit)</th>
+                    <th className="p-2 text-center">Qty Variance</th>
+                    <th className="p-2">Counted By</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rose-50">
+                  {reviewItemsData.map((it, idx) => {
+                    const sys = Number(it.systemQtySnapshot || 0);
+                    const phys = it.physicalQty != null ? Number(it.physicalQty) : sys;
+                    const diff = phys - sys;
+                    return (
+                      <tr key={idx}>
+                        <td className="p-2 font-mono font-bold text-rose-900">{it.skuCode || it.skuId}</td>
+                        <td className="p-2">{it.itemName}</td>
+                        <td className="p-2 text-center font-bold text-slate-600">{sys} pcs</td>
+                        <td className="p-2 text-center">
+                          <input
+                            type="number"
+                            min="0"
+                            value={phys}
+                            onChange={(e) => {
+                              const val = Math.max(0, parseInt(e.target.value) || 0);
+                              setReviewItemsData((prev) =>
+                                prev.map((item, i) => (i === idx ? { ...item, physicalQty: val, adjustmentQty: val - sys } : item))
+                              );
+                            }}
+                            className="w-20 p-1 border border-rose-300 rounded font-bold text-center outline-none bg-rose-50/30"
+                          />
+                        </td>
+                        <td className={`p-2 text-center font-bold ${diff > 0 ? "text-emerald-600" : diff < 0 ? "text-red-600" : "text-slate-500"}`}>
+                          {diff > 0 ? `+${diff}` : diff}
+                        </td>
+                        <td className="p-2 text-slate-500">{it.countedBy || currentUser.name}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-rose-100">
+              <button
+                type="button"
+                onClick={() => setIsSopReviewModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPostStockOpname}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow"
+              >
+                ✓ Selesai Review & Posting (POST-20261016-XXXX)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PEMBATALAN SO */}
+      {isSoCancelConfirmOpen && soCancelTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-70 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-red-200">
+            <h3 className="text-base font-bold text-red-950 mb-1">Batalkan Sales Order</h3>
+            <p className="text-xs text-red-600 font-mono font-bold mb-3">No SO: {soCancelTarget.soId}</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Alasan Pembatalan (Wajib)</label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Ketik alasan pembatalan SO..."
+                  value={soCancelReason}
+                  onChange={(e) => setSoCancelReason(e.target.value)}
+                  className="w-full p-2.5 border border-rose-200 rounded-lg text-xs outline-none"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setIsSoCancelConfirmOpen(false)} className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold">Tutup</button>
+                <button type="button" onClick={executeCancelSo} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow">Konfirmasi Batal</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PEMBATALAN DO (ROOT ADMIN ONLY) */}
+      {isDoCancelConfirmOpen && doCancelTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-70 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-red-300">
+            <div className="text-red-600 text-2xl mb-1">⚠️</div>
+            <h3 className="text-base font-bold text-red-950 mb-1">Konfirmasi Pembatalan Delivery Order</h3>
+            <p className="text-xs text-slate-600 mb-3 leading-relaxed">
+              Pembatalan DO <b>{doCancelTarget.doId}</b> akan mengembalikan saldo stok ke master produk dan mencatatnya ke buku mutasi (ledger).
+            </p>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Alasan Pembatalan (Wajib):</label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Ketik alasan pembatalan DO..."
+                  value={doCancelReason}
+                  onChange={(e) => setDoCancelReason(e.target.value)}
+                  className="w-full p-2.5 border border-rose-200 rounded-lg outline-none"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setIsDoCancelConfirmOpen(false)} className="px-3 py-2 bg-slate-100 rounded-lg font-bold">Batal</button>
+                <button type="button" onClick={executeCancelDo} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow">Konfirmasi Batalkan DO</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL FORM TAMBAH/EDIT STAFF (ST-xx) */}
+      {isStaffModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-60 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-rose-100">
+            <h3 className="text-base font-bold text-rose-950 mb-3">
+              {staffModalMode === "create" ? "Tambah Staff Baru" : `Edit Akun Staff (${staffForm.userId})`}
+            </h3>
+            <form onSubmit={handleSaveStaff} className="space-y-3 text-xs">
+              <div>
+                <label className="font-semibold block mb-1">ID Staff (Otomatis)</label>
+                <input
+                  type="text"
+                  disabled
+                  value={staffForm.staffId}
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-slate-100 font-mono font-bold text-rose-900 select-none outline-none"
+                />
+              </div>
+              <div>
+                <label className="font-semibold block mb-1">Nama Lengkap *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="misal: Ahmad Fauzi"
+                  value={staffForm.fullName}
+                  onChange={(e) => setStaffForm({ ...staffForm, fullName: e.target.value })}
+                  className="w-full p-2 border border-rose-200 rounded-lg outline-none"
+                />
+              </div>
+              <div>
+                <label className="font-semibold block mb-1">ID / Username Login *</label>
+                <input
+                  type="text"
+                  required
+                  disabled={staffModalMode === "edit"}
+                  placeholder="misal: ahmad_staff"
+                  value={staffForm.userId}
+                  onChange={(e) => setStaffForm({ ...staffForm, userId: e.target.value })}
+                  className="w-full p-2 border border-rose-200 rounded-lg outline-none font-mono disabled:bg-slate-100"
+                />
+              </div>
+              <div>
+                <label className="font-semibold block mb-1">Password *</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Masukkan kata sandi..."
+                  value={staffForm.password}
+                  onChange={(e) => setStaffForm({ ...staffForm, password: e.target.value })}
+                  className="w-full p-2 border border-rose-200 rounded-lg outline-none font-mono"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-rose-100">
+                <button type="button" onClick={() => setIsStaffModalOpen(false)} className="px-3.5 py-1.5 bg-slate-100 rounded-lg font-bold">Batal</button>
+                <button type="submit" className="px-4 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white rounded-lg font-bold shadow">
+                  {staffModalMode === "create" ? "Simpan Staff" : "Perbarui Staff"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CRUD CUSTOMER */}
+      {isCustomerModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-60 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-rose-100">
+            <h3 className="text-base font-bold text-rose-950 mb-3">
+              {customerModalMode === "create" ? "Tambah Customer Baru" : `Edit Data Customer (${customerForm.customerId})`}
+            </h3>
+            <form onSubmit={handleSaveCustomer} className="space-y-3 text-xs">
+              <div>
+                <label className="font-semibold block mb-1">Nama Customer *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Nama Lengkap Customer"
+                  value={customerForm.customerName}
+                  onChange={(e) => setCustomerForm({ ...customerForm, customerName: e.target.value })}
+                  className="w-full p-2 border border-rose-200 rounded-lg outline-none"
+                />
+              </div>
+              <div>
+                <label className="font-semibold block mb-1">No. Handphone / WhatsApp</label>
+                <input
+                  type="text"
+                  placeholder="08xxxxxxxx"
+                  value={customerForm.phone}
+                  onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
+                  className="w-full p-2 border border-rose-200 rounded-lg outline-none font-mono"
+                />
+              </div>
+              <div>
+                <label className="font-semibold block mb-1">Email</label>
+                <input
+                  type="email"
+                  placeholder="customer@domain.com"
+                  value={customerForm.email}
+                  onChange={(e) => setCustomerForm({ ...customerForm, email: e.target.value })}
+                  className="w-full p-2 border border-rose-200 rounded-lg outline-none"
+                />
+              </div>
+              <div>
+                <label className="font-semibold block mb-1">Alamat Lengkap Pengiriman</label>
+                <textarea
+                  rows={2}
+                  placeholder="Jalan, No Rumah, RT/RW, Kota, Kode Pos"
+                  value={customerForm.address}
+                  onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value, displayAddress: e.target.value })}
+                  className="w-full p-2 border border-rose-200 rounded-lg outline-none"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-rose-100">
+                <button type="button" onClick={() => setIsCustomerModalOpen(false)} className="px-3.5 py-1.5 bg-slate-100 rounded-lg font-bold">Batal</button>
+                <button type="submit" className="px-4 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white rounded-lg font-bold shadow">Simpan Customer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EXTERNAL COMPONENT MODALS */}
       <ProductModal
         isOpen={isProductModalOpen}
         isEditing={isEditingProduct}
@@ -3345,14 +3642,20 @@ export default function Page() {
         suppliers={suppliers}
         initialData={productFormData}
         onClose={() => setIsProductModalOpen(false)}
-        onConfirmSave={handleSaveProduct}
+        onConfirmSave={async (savedData: any) => {
+          setIsProductModalOpen(false);
+          loadAllData();
+        }}
       />
 
       <StockAdjustmentModal
         isOpen={isAdjModalOpen}
         products={products}
         onClose={() => setIsAdjModalOpen(false)}
-        onExecuteAdjustment={handleExecuteStockAdjustment}
+        onExecuteAdjustment={async () => {
+          setIsAdjModalOpen(false);
+          loadAllData();
+        }}
         showAlert={showAlert}
       />
 
@@ -3362,7 +3665,10 @@ export default function Page() {
         families={families}
         currentUserName={currentUser.name}
         onClose={() => setIsInitSopModalOpen(false)}
-        onConfirmInit={handleConfirmInitSop}
+        onConfirmInit={async () => {
+          setIsInitSopModalOpen(false);
+          loadAllData();
+        }}
         showAlert={showAlert}
       />
 
@@ -3379,7 +3685,10 @@ export default function Page() {
         initialCourier={soModalInitCourier}
         initialService={soModalInitService}
         onClose={() => setIsSoModalOpen(false)}
-        onSaveSo={handleSaveSalesOrder}
+        onSaveSo={async () => {
+          setIsSoModalOpen(false);
+          loadAllData();
+        }}
         showAlert={showAlert}
       />
 
@@ -3388,7 +3697,10 @@ export default function Page() {
         products={products}
         suppliers={suppliers}
         onClose={() => setIsCreatePoModalOpen(false)}
-        onSubmitPo={handleCreatePurchaseOrder}
+        onSubmitPo={async () => {
+          setIsCreatePoModalOpen(false);
+          loadAllData();
+        }}
         showAlert={showAlert}
       />
 
@@ -3403,357 +3715,27 @@ export default function Page() {
         onSave={handleSaveSupplier}
       />
 
-      {/* MODAL KONFIRMASI PENONAKTIFAN SKU LAMA */}
-      {isDeactivateSkuModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-amber-200">
-            <h3 className="text-base font-bold text-amber-950 mb-1">Pratinjau Penonaktifan SKU Lama</h3>
-            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-              Tindakan ini akan menonaktifkan status seluruh SKU yang saat ini berstatus <b>Aktif</b>. Status awal akan dibackup secara atomik sehingga dapat dipulihkan.
-            </p>
-
-            <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-xs text-amber-900 mb-4 space-y-1">
-              <div>Jumlah SKU terdampak: <b>{products.filter((p) => p.active !== false).length} SKU</b></div>
-              <div>Pengguna eksekutor: <b>{currentUser.name} (ROOT_ADMIN)</b></div>
-              <div className="text-[11px] text-amber-700 pt-1">
-                Catatan: SKU yang dinonaktifkan tidak akan muncul pada form pemesanan SO sampai diaktifkan kembali.
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                disabled={skuActionLoading}
-                onClick={() => setIsDeactivateSkuModalOpen(false)}
-                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                disabled={skuActionLoading || products.filter((p) => p.active !== false).length === 0}
-                onClick={handleExecuteMassDeactivateSku}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow"
-              >
-                {skuActionLoading ? "Memproses Backup & Nonaktif..." : "Konfirmasi Nonaktifkan Seluruh SKU"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL KONFIRMASI AKTIVASI KEMBALI SKU */}
-      {isReactivateSkuModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-emerald-200">
-            <h3 className="text-base font-bold text-emerald-950 mb-1">Aktivasi Kembali SKU Bersupplier</h3>
-            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-              Sistem akan memulihkan dan mengaktifkan kembali seluruh SKU nonaktif yang telah ditetapkan relasi supplier rekannya.
-            </p>
-
-            <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-xs text-emerald-900 mb-4 space-y-1">
-              <div>SKU siap diaktifkan: <b>{products.filter((p) => p.active === false && p.supplierId).length} SKU</b></div>
-              <div>SKU belum bersupplier (tetap nonaktif): <b>{products.filter((p) => p.active === false && !p.supplierId).length} SKU</b></div>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                disabled={skuActionLoading}
-                onClick={() => setIsReactivateSkuModalOpen(false)}
-                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                disabled={skuActionLoading || products.filter((p) => p.active === false && p.supplierId).length === 0}
-                onClick={handleExecuteMassReactivateSku}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow"
-              >
-                {skuActionLoading ? "Mengaktifkan..." : "Aktifkan Sekarang"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <ReceivingModal
-        isOpen={isReceivingModalOpen}
-        availablePos={purchaseOrders.filter((po) => ["OPEN", "PARTIAL"].includes(String(po.status || "").toUpperCase()))}
-        onSelectPo={(po: any) => setSelectedPoForReceiving(po)}
-        selectedPo={selectedPoForReceiving}
-        onClose={() => {
-          setIsReceivingModalOpen(false);
-          setSelectedPoForReceiving(null);
-        }}
-        onExecuteReceiving={handleExecuteReceiving}
-        showAlert={showAlert}
-      />
-
-      {/* MODAL PENDAFTARAN USER BARU */}
-      {isAddUserModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-rose-100">
-            <h3 className="text-base font-bold text-rose-950 mb-1">Daftarkan User Baru</h3>
-            <p className="text-xs text-rose-500 mb-4 font-medium">Role baru otomatis ditetapkan sebagai Staff Gudang</p>
-
-            <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-semibold text-rose-900 mb-1">Nama Lengkap</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="misal: Budi Santoso"
-                  value={userForm.fullName}
-                  onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })}
-                  className="w-full p-2 border border-rose-200 rounded-lg outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-rose-900 mb-1">User ID / Username</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="misal: budi_staff"
-                  value={userForm.userId}
-                  onChange={(e) => setUserForm({ ...userForm, userId: e.target.value })}
-                  className="w-full p-2 border border-rose-200 rounded-lg outline-none font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-rose-900 mb-1">Password</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="Masukkan password..."
-                  value={userForm.password}
-                  onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
-                  className="w-full p-2 border border-rose-200 rounded-lg outline-none font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-rose-900 mb-1">Role Akun</label>
-                <input
-                  type="text"
-                  disabled
-                  value="Staff Gudang (Staff)"
-                  className="w-full p-2 border border-slate-200 rounded-lg bg-slate-100 text-slate-500 font-bold select-none cursor-not-allowed outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-rose-100">
-                <button
-                  type="button"
-                  onClick={() => setIsAddUserModalOpen(false)}
-                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white rounded-lg font-bold shadow"
-                >
-                  Simpan User
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL GANTI EKSPEDISI DARI SNAPSHOT (SO PROCESSING) */}
-      {isEditExpeditionModalOpen && targetProcessingSo && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-rose-100">
-            <h3 className="text-base font-bold text-rose-950 mb-1">Ganti Ekspedisi (SO Processing)</h3>
-            <p className="text-xs text-rose-600 font-mono mb-4">SO: {targetProcessingSo.soId} | Pilihan dari snapshot pembuatan SO</p>
-
-            <div className="space-y-2 mb-4">
-              {(targetProcessingSo.shippingRatesSnapshot || []).map((r: any, idx: number) => (
-                <div
-                  key={idx}
-                  onClick={() => {
-                    setTargetProcessingSo({
-                      ...targetProcessingSo,
-                      shippingCost: r.cost,
-                      shippingCourier: r.courier,
-                      shippingServiceName: r.serviceName,
-                    });
-                  }}
-                  className={`p-3 rounded-lg border text-xs cursor-pointer flex justify-between items-center ${
-                    targetProcessingSo.shippingServiceName === r.serviceName ? "bg-[#BE185D] text-white font-bold" : "bg-white border-rose-200"
-                  }`}
-                >
-                  <div>
-                    <div>{r.serviceName}</div>
-                    <div className="text-[10px] opacity-80">Estimasi: {r.etd || "-"}</div>
-                  </div>
-                  <div className="font-bold">{formatRupiah(r.cost)}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-rose-100">
-              <button type="button" onClick={() => setIsEditExpeditionModalOpen(false)} className="px-3 py-1.5 bg-slate-100 rounded text-xs font-bold">Tutup</button>
-              <button type="button" onClick={handleSaveProcessingExpedition} className="px-4 py-1.5 bg-[#BE185D] text-white rounded text-xs font-bold">Simpan Ekspedisi</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* POP-UP KONFIRMASI STATUS PROCESSING */}
-      {processingConfirmTarget && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-purple-200 text-center">
-            <div className="w-12 h-12 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-3">
-              ⏩
-            </div>
-            <h3 className="text-base font-bold text-rose-950 mb-1">Konfirmasi Status Processing</h3>
-            <p className="text-xs text-slate-600 mb-6 leading-relaxed">
-              Apakah Anda yakin ingin menaikkan status SO <b>{processingConfirmTarget.soId}</b> ke <b>PROCESSING</b>? Setelah status dinaikkan, daftar barang dan harga akan dikunci.
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setProcessingConfirmTarget(null)}
-                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={executeMarkProcessing}
-                className="flex-1 py-2 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-xl shadow"
-              >
-                Ya, Ubah Status
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL KARTU MUTASI DETAIL PER SKU */}
-      {selectedProductLedger && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl border border-rose-100 flex flex-col max-h-[85vh]">
-            <div className="border-b border-rose-100 pb-3 mb-3">
-              <h3 className="text-base font-bold text-rose-950">Kartu Stok: {selectedProductLedger.itemName}</h3>
-              <p className="text-xs font-mono font-bold text-rose-600">SKU: {selectedProductLedger.sku} | Saldo Fisik: {selectedProductLedger.stock || 0} pcs</p>
-            </div>
-            <div className="overflow-y-auto flex-1 text-xs">
-              <table className="w-full text-left">
-                <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
-                  <tr>
-                    <th className="p-2">Tanggal</th>
-                    <th className="p-2">Tipe</th>
-                    <th className="p-2">Masuk</th>
-                    <th className="p-2">Keluar</th>
-                    <th className="p-2">Saldo Akhir</th>
-                    <th className="p-2">Ref / Alasan</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-rose-50">
-                  {selectedProductMovements.map((m) => (
-                    <tr key={m.id}>
-                      <td className="p-2">{m.date}</td>
-                      <td className="p-2 font-bold">{m.type}</td>
-                      <td className="p-2 text-emerald-600 font-bold">{m.qtyIn > 0 ? `+${m.qtyIn}` : "-"}</td>
-                      <td className="p-2 text-red-600 font-bold">{m.qtyOut > 0 ? `-${m.qtyOut}` : "-"}</td>
-                      <td className="p-2 font-bold">{m.newStock}</td>
-                      <td className="p-2 text-[11px] text-slate-500">{m.reason || m.referenceId}</td>
-                    </tr>
-                  ))}
-                  {selectedProductMovements.length === 0 && (
-                    <tr><td colSpan={6} className="p-4 text-center text-slate-400">Belum ada pergerakan stok untuk SKU ini.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="pt-3 border-t border-rose-100 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setSelectedProductLedger(null)}
-                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL CANCEL SOP */}
-      {isSopCancelConfirmOpen && sopCancelTarget && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-red-200">
-            <h3 className="text-base font-bold text-red-950 mb-1">Batalkan Stock Opname</h3>
-            <p className="text-xs text-red-600 font-mono font-bold mb-3">Dokumen: {sopCancelTarget.documentNo || sopCancelTarget.sopId}</p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Alasan Pembatalan (Wajib)</label>
-                <textarea
-                  rows={3}
-                  required
-                  placeholder="Ketik alasan pembatalan..."
-                  value={sopCancelReason}
-                  onChange={(e) => setSopCancelReason(e.target.value)}
-                  className="w-full p-2.5 border border-rose-200 rounded-lg text-xs outline-none"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setIsSopCancelConfirmOpen(false)} className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold">Tutup</button>
-                <button
-                  type="button"
-                  disabled={sopCountdown > 0}
-                  onClick={executeCancelSop}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold text-white transition ${sopCountdown > 0 ? "bg-slate-400 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"}`}
-                >
-                  {sopCountdown > 0 ? `Konfirmasi Batal (${sopCountdown}s)` : "Konfirmasi Batal"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL CANCEL PO */}
-      {isPoCancelConfirmOpen && poCancelTarget && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-red-200">
-            <h3 className="text-base font-bold text-red-950 mb-1">Batalkan Purchase Order</h3>
-            <p className="text-xs text-red-600 font-mono font-bold mb-3">No PO: {poCancelTarget.poId}</p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Alasan Pembatalan (Wajib)</label>
-                <textarea
-                  rows={3}
-                  required
-                  placeholder="Ketik alasan pembatalan PO..."
-                  value={poCancelReason}
-                  onChange={(e) => setPoCancelReason(e.target.value)}
-                  className="w-full p-2.5 border border-rose-200 rounded-lg text-xs outline-none"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setIsPoCancelConfirmOpen(false)} className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold">Tutup</button>
-                <button type="button" onClick={executeCancelPo} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold">Konfirmasi Batal</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL KONFIRMASI LOGOUT */}
-      {isLogoutConfirmOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+      {/* ALERT MODAL */}
+      {alertModal.isOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-70">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-rose-100 text-center">
-            <div className="w-12 h-12 bg-rose-100 text-[#9F1239] rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-3">
-              🚪
-            </div>
+            <h3 className="text-base font-bold text-rose-950 mb-2">{alertModal.title}</h3>
+            <p className="text-xs text-rose-700 mb-5">{alertModal.message}</p>
+            <button
+              type="button"
+              onClick={() => setAlertModal({ isOpen: false, title: "", message: "" })}
+              className="w-full py-2 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-xl shadow"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* LOGOUT CONFIRM MODAL */}
+      {isLogoutConfirmOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-70 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-rose-100 text-center">
             <h3 className="text-base font-bold text-rose-950 mb-1">Konfirmasi Keluar Akun</h3>
             <p className="text-xs text-rose-700 mb-6 leading-relaxed">
               Apakah Anda yakin ingin keluar dari sesi <b>{currentUser.name}</b>?
@@ -3768,29 +3750,16 @@ export default function Page() {
               </button>
               <button
                 type="button"
-                onClick={handleExecuteLogout}
+                onClick={() => {
+                  setIsLogoutConfirmOpen(false);
+                  document.cookie = "admin_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+                  router.push("/login");
+                }}
                 className="flex-1 py-2 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-bold rounded-xl shadow"
               >
                 Ya, Keluar
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ALERT POP-UP UMUM */}
-      {alertModal.isOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-rose-100 text-center">
-            <h3 className="text-base font-bold text-rose-950 mb-2">{alertModal.title}</h3>
-            <p className="text-xs text-rose-700 mb-5">{alertModal.message}</p>
-            <button
-              type="button"
-              onClick={() => setAlertModal({ isOpen: false, title: "", message: "" })}
-              className="w-full py-2 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-xl"
-            >
-              Tutup
-            </button>
           </div>
         </div>
       )}

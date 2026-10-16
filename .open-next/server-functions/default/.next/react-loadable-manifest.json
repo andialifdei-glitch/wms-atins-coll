@@ -1,32 +1,11 @@
 {
   "app\\DashboardLoader.tsx -> ./DashboardClient": {
-    "id": 7397,
+    "id": 8636,
     "files": [
-      "static/chunks/2170a4aa.9398291fb1b22b3b.js",
       "static/chunks/0e142730.e988ad62d5ad89cf.js",
-      "static/chunks/164f4fb6.28d1891bc47dfcc9.js",
-      "static/chunks/dba1e047.419303ace247f4e5.js",
-      "static/chunks/559.1fe2ca1d11198de0.js",
-      "static/chunks/848.104361530bbb36fa.js"
-    ]
-  },
-  "node_modules\\jspdf\\dist\\jspdf.es.min.js -> canvg": {
-    "id": 3167,
-    "files": [
-      "static/chunks/bc98253f.99ae7f67c3ed8f9a.js",
-      "static/chunks/902.5344dd84b7ad0109.js"
-    ]
-  },
-  "node_modules\\jspdf\\dist\\jspdf.es.min.js -> dompurify": {
-    "id": 3125,
-    "files": [
-      "static/chunks/125.4976f0f7fb478e63.js"
-    ]
-  },
-  "node_modules\\jspdf\\dist\\jspdf.es.min.js -> html2canvas": {
-    "id": 2201,
-    "files": [
-      "static/chunks/ad2866b8.e5e1a4a56b1dc426.js"
+      "static/chunks/dba1e047.aaa8189f2734265d.js",
+      "static/chunks/211.a04b2e95622de8fc.js",
+      "static/chunks/636.d8a92b108aee85b0.js"
     ]
   },
   "node_modules\\next\\dist\\client\\index.js -> ../pages/_app": {

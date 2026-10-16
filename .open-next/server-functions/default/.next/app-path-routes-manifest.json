@@ -6,9 +6,9 @@
   "/favicon.ico/route": "/favicon.ico",
   "/api/login/route": "/api/login",
   "/api/portal/data/route": "/api/portal/data",
+  "/api/suppliers/route": "/api/suppliers",
   "/api/receiving/create/route": "/api/receiving/create",
   "/api/shipping/calculate/route": "/api/shipping/calculate",
-  "/api/suppliers/route": "/api/suppliers",
   "/login/page": "/login",
   "/page": "/"
 }
