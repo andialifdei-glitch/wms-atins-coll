@@ -1,108 +1,132 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { verifyUserPassword } from "@/lib/firebase-auth";
 
 export const dynamic = "force-dynamic";
 
-async function sha256Hex(str: string): Promise<string> {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest("SHA-256", enc.encode(str));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-const ROOT_ID = "admin";
 const PROJECT_ID = "gen-lang-client-0158803339";
 const DATABASE_ID = "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f";
+
+function normalizeRole(rawRole: string): "ROOT_ADMIN" | "ADMIN_GUDANG" | "STAFF_GUDANG" {
+  const r = (rawRole || "").trim().toUpperCase();
+  if (r.includes("ROOT") || r === "ADMIN" || r === "SUPER ADMIN") return "ROOT_ADMIN";
+  if (r.includes("ADMIN") || r.includes("GUDANG_ADMIN")) return "ADMIN_GUDANG";
+  return "STAFF_GUDANG";
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const userId = String(body.userId || body.username || "").trim();
+    const rawInput = String(body.userId || body.username || body.email || "").trim();
     const password = String(body.password || "").trim();
 
-    if (!userId || !password) {
+    if (!rawInput || !password) {
       return NextResponse.json(
-        { success: false, message: "ID dan Password wajib diisi" },
+        { success: false, message: "ID/Email dan Password wajib diisi." },
         { status: 400 }
       );
     }
 
-    const inputHash = await sha256Hex(password);
-    const rootHash = await sha256Hex("rootadmin");
+    const email = rawInput.includes("@")
+      ? rawInput.toLowerCase()
+      : `${rawInput.toLowerCase()}@wms.atinscollection.com`;
 
-    let authenticatedUser: { id: string; role: string; name: string } | null = null;
-
-    if (userId === ROOT_ID && inputHash === rootHash) {
-      authenticatedUser = { id: "admin", role: "Admin", name: "Super Admin" };
-    } else {
-      const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
-      const queryUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${apiKey}`;
-
-      try {
-        const res = await fetch(queryUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            structuredQuery: {
-              from: [{ collectionId: "portal_users" }],
-              where: {
-                fieldFilter: {
-                  field: { fieldPath: "username" },
-                  op: "EQUAL",
-                  value: { stringValue: userId },
-                },
-              },
-              limit: 1,
-            },
-          }),
-        });
-
-        if (res.ok) {
-          const list: any[] = await res.json();
-          const found = list.find((d) => d.document && d.document.fields);
-          if (found) {
-            const fields = found.document.fields;
-            const dbHash = fields.passwordHash?.stringValue || fields.password?.stringValue;
-            if (dbHash === inputHash) {
-              authenticatedUser = {
-                id: userId,
-                role: fields.role?.stringValue || "Staff",
-                name: fields.fullName?.stringValue || userId,
-              };
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Firestore user query error:", err);
-      }
-    }
-
-    if (!authenticatedUser) {
+    // 1. Verifikasi kredensial MURNI ke Firebase Authentication (Hapus seluruh hardcode admin/rootadmin)
+    let authData: any;
+    try {
+      authData = await verifyUserPassword(email, password);
+    } catch {
       return NextResponse.json(
-        { success: false, message: "ID atau Password salah" },
+        { success: false, message: "Kredensial login tidak valid." },
         { status: 401 }
       );
     }
 
-    const response = NextResponse.json({
-      success: true,
-      user: authenticatedUser,
+    const uid = authData.localId;
+    const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
+
+    // 2. Ambil profil terikat dari Firestore
+    const docUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/users/${uid}?key=${apiKey}`;
+    const profileRes = await fetch(docUrl, {
+      headers: { Authorization: `Bearer ${authData.idToken}` },
     });
 
-    response.cookies.set({
-      name: "admin_session",
-      value: JSON.stringify(authenticatedUser),
+    let role: "ROOT_ADMIN" | "ADMIN_GUDANG" | "STAFF_GUDANG" = "STAFF_GUDANG";
+    let fullName = authData.displayName || rawInput;
+
+    if (profileRes.ok) {
+      const docData = await profileRes.json();
+      const fields = docData.fields || {};
+
+      const isActive = fields.active?.booleanValue ?? true;
+      if (!isActive) {
+        return NextResponse.json(
+          { success: false, message: "Akun Anda dinonaktifkan. Hubungi Administrator." },
+          { status: 403 }
+        );
+      }
+
+      role = normalizeRole(fields.role?.stringValue || "");
+      fullName = fields.fullName?.stringValue || fields.name?.stringValue || fullName;
+    } else {
+      // Fallback pencarian dokumen berdasarkan userId jika id dokumen berupa userId
+      const queryUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${apiKey}`;
+      const queryRes = await fetch(queryUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: "users" }],
+            where: {
+              fieldFilter: { field: { fieldPath: "userId" }, op: "EQUAL", value: { stringValue: rawInput.toLowerCase() } },
+            },
+            limit: 1,
+          },
+        }),
+      });
+
+      if (queryRes.ok) {
+        const list: any[] = await queryRes.json();
+        const found = list.find((d) => d.document && d.document.fields);
+        if (found) {
+          const fields = found.document.fields;
+          const isActive = fields.active?.booleanValue ?? true;
+          if (!isActive) {
+            return NextResponse.json(
+              { success: false, message: "Akun Anda dinonaktifkan. Hubungi Administrator." },
+              { status: 403 }
+            );
+          }
+          role = normalizeRole(fields.role?.stringValue || "");
+          fullName = fields.fullName?.stringValue || fields.name?.stringValue || fullName;
+        }
+      }
+    }
+
+    const sessionPayload = {
+      uid: uid,
+      id: rawInput,
+      email: email,
+      role: role,
+      name: fullName,
+    };
+
+    const response = NextResponse.json({
+      success: true,
+      message: "Login berhasil.",
+      data: sessionPayload,
+    });
+
+    response.cookies.set("admin_session", encodeURIComponent(JSON.stringify(sessionPayload)), {
       path: "/",
+      maxAge: 60 * 60 * 12,
       httpOnly: false,
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
     });
 
     return response;
-  } catch (error: any) {
-    console.error("Login Handler Error:", error);
+  } catch {
     return NextResponse.json(
-      { success: false, message: "Internal server error" },
+      { success: false, message: "Terjadi kesalahan internal server login." },
       { status: 500 }
     );
   }

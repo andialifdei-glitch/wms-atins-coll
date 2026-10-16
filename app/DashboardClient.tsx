@@ -24,7 +24,6 @@ import SalesOrderModal from "@/components/modals/SalesOrderModal";
 import CreatePurchaseOrderModal from "@/components/modals/CreatePurchaseOrderModal";
 import ReceivingModal from "@/components/modals/ReceivingModal";
 import NotificationBell from "@/components/notifications/NotificationBell";
-import { createOperationalNotification } from "@/lib/notifications";
 
 type MainTab = "dashboard" | "sales" | "inventory" | "purchase" | "reports" | "settings" | "human";
 
@@ -41,7 +40,6 @@ function generateValidPdfBlob(title: string, headers: string[], rows: any[][]): 
   contentStream += "BT\n/F1 8 Tf\n40 775 Td\n(Dicetak: " + sanitize(new Date().toLocaleString("id-ID")) + ") Tj\nET\n";
 
   let y = 750;
-  // Header Table
   contentStream += "BT\n/F1 9 Tf\n";
   let x = 40;
   headers.forEach((h) => {
@@ -50,7 +48,6 @@ function generateValidPdfBlob(title: string, headers: string[], rows: any[][]): 
   });
   contentStream += "ET\n";
 
-  // Rows
   y -= 15;
   contentStream += "BT\n/F1 8 Tf\n";
   rows.slice(0, 45).forEach((row) => {
@@ -127,7 +124,7 @@ function downloadExcel(docNo: string, filename: string, headers: string[], rows:
 export default function DashboardClient() {
   const router = useRouter();
 
-  // Tabs
+  // Navigation Tabs
   const [currentTab, setCurrentTab] = useState<MainTab>("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [salesSubTab, setSalesSubTab] = useState<"so" | "do">("so");
@@ -158,12 +155,12 @@ export default function DashboardClient() {
   const [ledgerSearch, setLedgerSearch] = useState("");
   const [salesReportType, setSalesReportType] = useState<"day" | "item" | "summary">("summary");
 
-  // User & Store Settings
+  // User & Store Settings (Dinamis tanpa nama hardcode)
   const [currentUser, setCurrentUser] = useState<{ id: string; role: string; name: string; username?: string }>({
-    id: "admin",
-    role: "Root Admin",
-    name: "Root Administrator",
-    username: "admin",
+    id: "",
+    role: "STAFF_GUDANG",
+    name: "Memuat...",
+    username: "",
   });
 
   const [storeSettings, setStoreSettings] = useState({
@@ -289,7 +286,7 @@ export default function DashboardClient() {
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   const [isApiSuccessModalOpen, setIsApiSuccessModalOpen] = useState(false);
 
-  // Force Logout saat buka web pertama kali
+  // 1. Force Logout saat pertama kali buka web
   useEffect(() => {
     const hasVisited = sessionStorage.getItem("wms_visited_session");
     if (!hasVisited) {
@@ -299,7 +296,7 @@ export default function DashboardClient() {
     }
   }, [router]);
 
-  // Session Timeout (5 Menit)
+  // 2. Session Idle Timeout (5 Menit)
   const resetIdleTimer = () => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     idleTimerRef.current = setTimeout(() => setIsSessionTimeoutOpen(true), 5 * 60 * 1000);
@@ -322,32 +319,35 @@ export default function DashboardClient() {
     router.push("/login");
   };
 
-  // Auth User Session Init
+  // 3. Baca Sesi Pengguna Dinamis (Nama Lengkap Asli)
   useEffect(() => {
     try {
       const match = document.cookie.split("; ").find((row) => row.startsWith("admin_session="));
       if (match) {
         const parsed = JSON.parse(decodeURIComponent(match.split("=")[1]));
-        const uName = parsed.username || parsed.userId || parsed.id || "admin";
         setCurrentUser({
-          id: uName,
-          role: uName.toLowerCase() === "admin" ? "Root Admin" : (parsed.role || "Admin Gudang"),
-          name: parsed.name || parsed.fullName || (uName.toLowerCase() === "admin" ? "Root Administrator" : uName),
-          username: uName,
+          id: parsed.id || parsed.userId || "",
+          role: parsed.role || "STAFF_GUDANG",
+          name: parsed.name || parsed.fullName || "Pengguna",
+          username: parsed.id || parsed.userId || "",
         });
+      } else {
+        router.push("/login");
       }
-    } catch {}
-  }, []);
+    } catch {
+      router.push("/login");
+    }
+  }, [router]);
 
   const isRootAdmin = useMemo(() => {
-    const roleClean = String(currentUser.role || "").trim().toLowerCase();
+    const roleClean = String(currentUser.role || "").trim().toUpperCase();
     const userClean = String(currentUser.username || currentUser.id || "").trim().toLowerCase();
-    return userClean === "admin" || roleClean.includes("root");
+    return userClean === "admin" || roleClean.includes("ROOT");
   }, [currentUser]);
 
   const isStaff = useMemo(() => {
-    const roleClean = String(currentUser.role || "").trim().toLowerCase();
-    return roleClean.includes("staff");
+    const roleClean = String(currentUser.role || "").trim().toUpperCase();
+    return roleClean.includes("STAFF");
   }, [currentUser]);
 
   const showAlert = (message: string, title = "Informasi") => {
@@ -1104,7 +1104,7 @@ export default function DashboardClient() {
 
   async function handleSaveStaff(e: React.FormEvent) {
     e.preventDefault();
-    if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak mengubah staff!", "Akses Ditolak");
+    if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak mengelola staf!", "Akses Ditolak");
     if (!staffForm.fullName.trim() || !staffForm.userId.trim() || !staffForm.password.trim()) {
       return showAlert("Seluruh kolom wajib diisi!", "Peringatan");
     }
@@ -1114,32 +1114,28 @@ export default function DashboardClient() {
       const cleanUserId = staffForm.userId.trim().toLowerCase();
 
       if (staffModalMode === "create") {
-        const counterRef = doc(db, "counters", "staff");
-        await runTransaction(db, async (tx) => {
-          const snap = await tx.get(counterRef);
-          const curr = snap.exists() ? (snap.data().currentNumber || 0) : 0;
-          tx.set(counterRef, { currentNumber: curr + 1, updatedAt: serverTimestamp() }, { merge: true });
-
-          const userDocRef = doc(db, "users", cleanUserId);
-          tx.set(userDocRef, {
+        const res = await fetch("/api/admin/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
             staffId: staffForm.staffId,
-            userId: cleanUserId,
-            username: cleanUserId,
             fullName: staffForm.fullName.trim(),
-            name: staffForm.fullName.trim(),
+            userId: cleanUserId,
             password: staffForm.password,
-            role: "Staff Gudang",
-            active: true,
-            createdAt: serverTimestamp(),
-            createdBy: currentUser.name,
-          });
+            role: "STAFF_GUDANG",
+          }),
         });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "Gagal membuat akun staf.");
+        }
+
         showAlert(`Staff baru [${staffForm.staffId} - ${cleanUserId}] berhasil ditambahkan!`, "Sukses");
       } else {
         await updateDoc(doc(db, "users", cleanUserId), {
           fullName: staffForm.fullName.trim(),
           name: staffForm.fullName.trim(),
-          password: staffForm.password,
           updatedAt: serverTimestamp(),
           updatedBy: currentUser.name,
         });
@@ -1345,12 +1341,18 @@ export default function DashboardClient() {
           </div>
           <p className="text-[11px] text-rose-300 mt-0.5">Warehouse Management System</p>
           <div className="mt-3 px-3 py-1.5 bg-[#5C2B42] rounded-lg text-xs flex justify-between items-center text-rose-200">
-            <span>Login: <b className="text-white">{currentUser.name}</b></span>
-            {isRootAdmin ? (
-              <span className="px-1.5 py-0.5 rounded bg-amber-500 text-white text-[9px] font-bold uppercase">Root</span>
-            ) : (
-              <span className="px-1.5 py-0.5 rounded bg-blue-500 text-white text-[9px] font-bold uppercase">{currentUser.role}</span>
-            )}
+            <span className="truncate pr-2">
+              Login: <b className="text-white">{currentUser.name || "Pengguna"}</b>
+            </span>
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase shrink-0 ${
+              currentUser.role === "ROOT_ADMIN" 
+                ? "bg-amber-500 text-white" 
+                : currentUser.role === "ADMIN_GUDANG" 
+                ? "bg-purple-500 text-white" 
+                : "bg-blue-500 text-white"
+            }`}>
+              {currentUser.role}
+            </span>
           </div>
         </div>
 
@@ -1948,7 +1950,6 @@ export default function DashboardClient() {
                             {sop.postingId || sop.reviewDocumentNo || "-"}
                           </td>
                           <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
-                            {/* Tombol PDF merah murni */}
                             <button
                               type="button"
                               onClick={() => {
@@ -2671,7 +2672,7 @@ export default function DashboardClient() {
                     <div className="overflow-x-auto text-xs">
                       <table className="w-full text-left">
                         <thead className="bg-rose-50 text-rose-900 font-bold">
-                          <tr><th className="p-2">SKU</th><th className="p-2">Nama Produk</th><th className="p-2.5">Stok Fisik</th><th className="p-2">HPP (Beli)</th><th className="p-2">Harga Net</th></tr>
+                          <tr><th className="p-2">SKU</th><th className="p-2">Nama Produk</th><th className="p-2.5">Stok Fisik</th><th className="p-2">HPP (Beli)</th><th className="p-2.5">Harga Net</th></tr>
                         </thead>
                         <tbody className="divide-y divide-rose-50">
                           {products.map((p) => (
@@ -2986,7 +2987,7 @@ export default function DashboardClient() {
                 </button>
               </div>
 
-              {/* 7.1 STAFF GUDANG (CRUD LENGKAP AUTO ST-xx) */}
+              {/* 7.1 STAFF GUDANG */}
               {humanSubTab === "staff" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
                   <div className="flex justify-between items-center">
@@ -3066,7 +3067,7 @@ export default function DashboardClient() {
                 </div>
               )}
 
-              {/* 7.2 SUPPLIER REKANAN (CRUD LENGKAP) */}
+              {/* 7.2 SUPPLIER REKANAN */}
               {humanSubTab === "suppliers" && (
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
                   <div className="flex justify-between items-center">
@@ -3509,6 +3510,78 @@ export default function DashboardClient() {
                 <button type="button" onClick={() => setIsDoCancelConfirmOpen(false)} className="px-3 py-2 bg-slate-100 rounded-lg font-bold">Batal</button>
                 <button type="button" onClick={executeCancelDo} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow">Konfirmasi Batalkan DO</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL GANTI EKSPEDISI DARI SNAPSHOT */}
+      {isEditExpeditionModalOpen && targetProcessingSo && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-70 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-rose-100">
+            <h3 className="text-base font-bold text-rose-950 mb-1">Ganti Ekspedisi (Snapshot SO)</h3>
+            <p className="text-xs text-rose-600 font-mono mb-4">SO: {targetProcessingSo.soId}</p>
+
+            <div className="space-y-2 mb-4">
+              {(targetProcessingSo.shippingRatesSnapshot || []).map((r: any, idx: number) => (
+                <div
+                  key={idx}
+                  onClick={() => {
+                    setTargetProcessingSo({
+                      ...targetProcessingSo,
+                      shippingCost: r.cost,
+                      shippingCourier: r.courier,
+                      shippingServiceName: r.serviceName,
+                    });
+                  }}
+                  className={`p-3 rounded-lg border text-xs cursor-pointer flex justify-between items-center ${
+                    targetProcessingSo.shippingServiceName === r.serviceName ? "bg-[#BE185D] text-white font-bold" : "bg-white border-rose-200"
+                  }`}
+                >
+                  <div>
+                    <div>{r.serviceName}</div>
+                    <div className="text-[10px] opacity-80">Estimasi: {r.etd || "-"}</div>
+                  </div>
+                  <div className="font-bold">{formatRupiah(r.cost)}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-rose-100">
+              <button type="button" onClick={() => setIsEditExpeditionModalOpen(false)} className="px-3 py-1.5 bg-slate-100 rounded text-xs font-bold">Tutup</button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    setLoading(true);
+                    const subtotalOnly = (targetProcessingSo.items || []).reduce((acc: number, it: any) => acc + (Number(it.subtotal) || 0), 0);
+                    const newTotal = subtotalOnly + (Number(targetProcessingSo.shippingCost) || 0);
+
+                    await updateDoc(doc(db, "sales_orders", targetProcessingSo.soId || targetProcessingSo.id), {
+                      shippingCost: targetProcessingSo.shippingCost || 0,
+                      shippingCourier: targetProcessingSo.shippingCourier || "",
+                      shippingServiceName: targetProcessingSo.shippingServiceName || "",
+                      expedition: targetProcessingSo.shippingServiceName || "",
+                      total: newTotal,
+                      updatedAt: serverTimestamp(),
+                      updatedBy: currentUser.name,
+                    });
+
+                    showAlert(`Ekspedisi SO [${targetProcessingSo.soId}] berhasil diubah!`, "Sukses");
+                    setIsEditExpeditionModalOpen(false);
+                    setTargetProcessingSo(null);
+                    setIsSoDetailModalOpen(false);
+                    loadAllData();
+                  } catch (err: any) {
+                    showAlert(err.message || "Gagal mengubah ekspedisi");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="px-4 py-1.5 bg-[#BE185D] text-white rounded text-xs font-bold"
+              >
+                Simpan Ekspedisi
+              </button>
             </div>
           </div>
         </div>

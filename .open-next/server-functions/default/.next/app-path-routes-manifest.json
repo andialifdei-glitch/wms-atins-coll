@@ -4,10 +4,12 @@
   "/api/logout/route": "/api/logout",
   "/api/regions/route": "/api/regions",
   "/favicon.ico/route": "/favicon.ico",
+  "/api/admin/sanitize-passwords/route": "/api/admin/sanitize-passwords",
+  "/api/admin/users/route": "/api/admin/users",
   "/api/login/route": "/api/login",
   "/api/portal/data/route": "/api/portal/data",
-  "/api/suppliers/route": "/api/suppliers",
   "/api/receiving/create/route": "/api/receiving/create",
+  "/api/suppliers/route": "/api/suppliers",
   "/api/shipping/calculate/route": "/api/shipping/calculate",
   "/login/page": "/login",
   "/page": "/"

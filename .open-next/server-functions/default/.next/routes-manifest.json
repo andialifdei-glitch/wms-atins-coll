@@ -42,6 +42,18 @@
       "namedRegex": "^/_not\\-found(?:/)?$"
     },
     {
+      "page": "/api/admin/sanitize-passwords",
+      "regex": "^/api/admin/sanitize\\-passwords(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/admin/sanitize\\-passwords(?:/)?$"
+    },
+    {
+      "page": "/api/admin/users",
+      "regex": "^/api/admin/users(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/admin/users(?:/)?$"
+    },
+    {
       "page": "/api/login",
       "regex": "^/api/login(?:/)?$",
       "routeKeys": {},
