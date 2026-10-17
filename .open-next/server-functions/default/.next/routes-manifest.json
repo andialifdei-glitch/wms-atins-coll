@@ -90,6 +90,12 @@
       "namedRegex": "^/api/shipping/calculate(?:/)?$"
     },
     {
+      "page": "/api/shipping/cost",
+      "regex": "^/api/shipping/cost(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/shipping/cost(?:/)?$"
+    },
+    {
       "page": "/api/suppliers",
       "regex": "^/api/suppliers(?:/)?$",
       "routeKeys": {},

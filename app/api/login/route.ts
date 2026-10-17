@@ -30,13 +30,13 @@ export async function POST(request: NextRequest) {
       ? rawInput.toLowerCase()
       : `${rawInput.toLowerCase()}@wms.atinscollection.com`;
 
-    // 1. Verifikasi kredensial MURNI ke Firebase Authentication (Hapus seluruh hardcode admin/rootadmin)
+    // 1. Verifikasi kredensial langsung ke Firebase Authentication Service
     let authData: any;
     try {
       authData = await verifyUserPassword(email, password);
     } catch {
       return NextResponse.json(
-        { success: false, message: "Kredensial login tidak valid." },
+        { success: false, message: "User ID atau Password tidak cocok." },
         { status: 401 }
       );
     }
@@ -44,70 +44,53 @@ export async function POST(request: NextRequest) {
     const uid = authData.localId;
     const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
 
-    // 2. Ambil profil terikat dari Firestore
-    const docUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/users/${uid}?key=${apiKey}`;
-    const profileRes = await fetch(docUrl, {
+    let resolvedFullName = authData.displayName || "";
+    let resolvedRole: "ROOT_ADMIN" | "ADMIN_GUDANG" | "STAFF_GUDANG" = "STAFF_GUDANG";
+    let isActive = true;
+
+    // 2. Ambil profil dari Firestore users/{userId} atau users/{uid}
+    const cleanId = rawInput.toLowerCase();
+    const docUrlId = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/users/${cleanId}?key=${apiKey}`;
+    const resId = await fetch(docUrlId, {
       headers: { Authorization: `Bearer ${authData.idToken}` },
     });
 
-    let role: "ROOT_ADMIN" | "ADMIN_GUDANG" | "STAFF_GUDANG" = "STAFF_GUDANG";
-    let fullName = authData.displayName || rawInput;
-
-    if (profileRes.ok) {
-      const docData = await profileRes.json();
-      const fields = docData.fields || {};
-
-      const isActive = fields.active?.booleanValue ?? true;
-      if (!isActive) {
-        return NextResponse.json(
-          { success: false, message: "Akun Anda dinonaktifkan. Hubungi Administrator." },
-          { status: 403 }
-        );
-      }
-
-      role = normalizeRole(fields.role?.stringValue || "");
-      fullName = fields.fullName?.stringValue || fields.name?.stringValue || fullName;
+    if (resId.ok) {
+      const data = await resId.json();
+      const fields = data.fields || {};
+      isActive = fields.active ? fields.active.booleanValue !== false : true;
+      resolvedRole = normalizeRole(fields.role?.stringValue || "");
+      resolvedFullName = fields.fullName?.stringValue || fields.name?.stringValue || resolvedFullName;
     } else {
-      // Fallback pencarian dokumen berdasarkan userId jika id dokumen berupa userId
-      const queryUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${apiKey}`;
-      const queryRes = await fetch(queryUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          structuredQuery: {
-            from: [{ collectionId: "users" }],
-            where: {
-              fieldFilter: { field: { fieldPath: "userId" }, op: "EQUAL", value: { stringValue: rawInput.toLowerCase() } },
-            },
-            limit: 1,
-          },
-        }),
+      const docUrlUid = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/users/${uid}?key=${apiKey}`;
+      const resUid = await fetch(docUrlUid, {
+        headers: { Authorization: `Bearer ${authData.idToken}` },
       });
 
-      if (queryRes.ok) {
-        const list: any[] = await queryRes.json();
-        const found = list.find((d) => d.document && d.document.fields);
-        if (found) {
-          const fields = found.document.fields;
-          const isActive = fields.active?.booleanValue ?? true;
-          if (!isActive) {
-            return NextResponse.json(
-              { success: false, message: "Akun Anda dinonaktifkan. Hubungi Administrator." },
-              { status: 403 }
-            );
-          }
-          role = normalizeRole(fields.role?.stringValue || "");
-          fullName = fields.fullName?.stringValue || fields.name?.stringValue || fullName;
-        }
+      if (resUid.ok) {
+        const data = await resUid.json();
+        const fields = data.fields || {};
+        isActive = fields.active ? fields.active.booleanValue !== false : true;
+        resolvedRole = normalizeRole(fields.role?.stringValue || "");
+        resolvedFullName = fields.fullName?.stringValue || fields.name?.stringValue || resolvedFullName;
       }
     }
+
+    if (!isActive) {
+      return NextResponse.json(
+        { success: false, message: "Akun Anda dinonaktifkan. Hubungi Administrator." },
+        { status: 403 }
+      );
+    }
+
+    const finalFullName = resolvedFullName.trim() || authData.displayName || rawInput;
 
     const sessionPayload = {
       uid: uid,
       id: rawInput,
       email: email,
-      role: role,
-      name: fullName,
+      role: resolvedRole,
+      name: finalFullName,
     };
 
     const response = NextResponse.json({

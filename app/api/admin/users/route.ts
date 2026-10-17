@@ -40,7 +40,6 @@ export async function POST(request: NextRequest) {
     const assignedRole = role === "ADMIN_GUDANG" ? "ADMIN_GUDANG" : "STAFF_GUDANG";
     const email = `${cleanUserId}@wms.atinscollection.com`;
 
-    // 1. Daftarkan kredensial akun murni ke Firebase Authentication
     let authUser: any;
     try {
       authUser = await createAuthUser(email, String(password).trim(), String(fullName).trim());
@@ -54,8 +53,7 @@ export async function POST(request: NextRequest) {
     const uid = authUser.localId;
     const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
 
-    // 2. Tulis profil ke Firestore users/{uid} (TIDAK MENYIMPAN PASSWORD DALAM BENTUK APAPUN)
-    const patchUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/users/${uid}?key=${apiKey}`;
+    const patchUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/users/${cleanUserId}?key=${apiKey}`;
     const firestorePayload = {
       fields: {
         uid: { stringValue: uid },

@@ -32,7 +32,6 @@ interface RegionItem {
   name: string;
 }
 
-// Generator Binary PDF Murni (Standar PDF-1.4 Valid) agar tidak korup di PDF reader
 function generateValidPdfBlob(title: string, headers: string[], rows: any[][]): Blob {
   const sanitize = (text: string) => String(text || "-").replace(/[\\()]/g, " ");
 
@@ -121,10 +120,48 @@ function downloadExcel(docNo: string, filename: string, headers: string[], rows:
   document.body.removeChild(link);
 }
 
+function getInitialUserSession() {
+  if (typeof window === "undefined") {
+    return { id: "", role: "", name: "", username: "" };
+  }
+  try {
+    const match = document.cookie.split("; ").find((row) => row.startsWith("admin_session="));
+    if (match) {
+      const raw = match.split("=")[1];
+      const parsed = JSON.parse(decodeURIComponent(raw));
+      if (parsed) {
+        return {
+          id: parsed.id || parsed.userId || parsed.uid || "",
+          role: parsed.role || "",
+          name: parsed.name || parsed.fullName || "",
+          username: parsed.id || parsed.userId || "",
+        };
+      }
+    }
+  } catch {}
+
+  try {
+    const local = localStorage.getItem("wms_user_session");
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (parsed) {
+        return {
+          id: parsed.id || parsed.userId || parsed.uid || "",
+          role: parsed.role || "",
+          name: parsed.name || parsed.fullName || "",
+          username: parsed.id || parsed.userId || "",
+        };
+      }
+    }
+  } catch {}
+
+  return { id: "", role: "", name: "", username: "" };
+}
+
 export default function DashboardClient() {
   const router = useRouter();
 
-  // Navigation Tabs
+  // Tabs
   const [currentTab, setCurrentTab] = useState<MainTab>("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [salesSubTab, setSalesSubTab] = useState<"so" | "do">("so");
@@ -155,14 +192,10 @@ export default function DashboardClient() {
   const [ledgerSearch, setLedgerSearch] = useState("");
   const [salesReportType, setSalesReportType] = useState<"day" | "item" | "summary">("summary");
 
-  // User & Store Settings (Dinamis tanpa nama hardcode)
-  const [currentUser, setCurrentUser] = useState<{ id: string; role: string; name: string; username?: string }>({
-    id: "",
-    role: "STAFF_GUDANG",
-    name: "Memuat...",
-    username: "",
-  });
+  // User Session
+  const [currentUser, setCurrentUser] = useState<{ id: string; role: string; name: string; username?: string }>(getInitialUserSession);
 
+  // Store Settings
   const [storeSettings, setStoreSettings] = useState({
     storeName: "Atin's Collection",
     storePhone: "0899-7884-435",
@@ -183,7 +216,6 @@ export default function DashboardClient() {
     btPrinterDeviceName: "",
   });
 
-  // Modal & Alerts
   const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title: string; message: string }>({
     isOpen: false,
     title: "",
@@ -193,21 +225,21 @@ export default function DashboardClient() {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // SO Detail & Action
+  // SO Detail & Modal
   const [selectedSoDetail, setSelectedSoDetail] = useState<any | null>(null);
   const [isSoDetailModalOpen, setIsSoDetailModalOpen] = useState(false);
   const [soCancelTarget, setSoCancelTarget] = useState<any | null>(null);
   const [soCancelReason, setSoCancelReason] = useState("");
   const [isSoCancelConfirmOpen, setIsSoCancelConfirmOpen] = useState(false);
 
-  // DO Bluetooth & Actions
+  // DO Bluetooth Print
   const [doCancelTarget, setDoCancelTarget] = useState<any | null>(null);
   const [doCancelReason, setDoCancelReason] = useState("");
   const [isDoCancelConfirmOpen, setIsDoCancelConfirmOpen] = useState(false);
   const [btPrintDevice, setBtPrintDevice] = useState<any | null>(null);
   const [btStatus, setBtStatus] = useState<string>("Belum Terkoneksi");
 
-  // SOP Review & Post
+  // SOP Review
   const [reviewSopTarget, setReviewSopTarget] = useState<any | null>(null);
   const [isSopReviewModalOpen, setIsSopReviewModalOpen] = useState(false);
   const [reviewItemsData, setReviewItemsData] = useState<any[]>([]);
@@ -216,32 +248,41 @@ export default function DashboardClient() {
   const [sopCountdown, setSopCountdown] = useState(10);
   const [isSopCancelConfirmOpen, setIsSopCancelConfirmOpen] = useState(false);
 
-  // PO & Customer State
+  // PO & Cancellation
   const [poCancelTarget, setPoCancelTarget] = useState<any | null>(null);
   const [poCancelReason, setPoCancelReason] = useState("");
   const [isPoCancelConfirmOpen, setIsPoCancelConfirmOpen] = useState(false);
+
+  // Customer Form dengan Wilayah Berjenjang
   const [customerModalMode, setCustomerModalMode] = useState<"create" | "edit">("create");
   const [customerForm, setCustomerForm] = useState({
     customerId: "",
     customerName: "",
     phone: "",
     email: "",
-    address: "",
-    displayAddress: "",
+    provinceCode: "",
+    provinceName: "",
+    regencyCode: "",
+    regencyName: "",
+    districtCode: "",
+    districtName: "",
+    villageCode: "",
+    villageName: "",
+    detailAddress: "",
+    postalCode: "",
   });
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [custRegencies, setCustRegencies] = useState<RegionItem[]>([]);
+  const [custDistricts, setCustDistricts] = useState<RegionItem[]>([]);
+  const [custVillages, setCustVillages] = useState<RegionItem[]>([]);
+  const [loadingCustRegion, setLoadingCustRegion] = useState(false);
 
-  // Staff CRUD State
+  // Staff CRUD
   const [staffModalMode, setStaffModalMode] = useState<"create" | "edit">("create");
-  const [staffForm, setStaffForm] = useState({
-    staffId: "",
-    fullName: "",
-    userId: "",
-    password: "",
-  });
+  const [staffForm, setStaffForm] = useState({ staffId: "", fullName: "", userId: "", password: "" });
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
 
-  // External Component Modals
+  // Modal External
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isEditingProduct, setIsEditingProduct] = useState(false);
   const [productFormData, setProductFormData] = useState<any>({
@@ -262,8 +303,8 @@ export default function DashboardClient() {
   const [soModalInitItems, setSoModalInitItems] = useState<any[]>([]);
   const [soModalInitRates, setSoModalInitRates] = useState<any[]>([]);
   const [soModalInitCost, setSoModalInitCost] = useState<number>(0);
-  const [soModalInitCourier, setSoModalInitCourier] = useState<string>("");
-  const [soModalInitService, setSoModalInitService] = useState<string>("");
+  const [soModalInitCourier, setSoModalInitCourier] = useState<string>("KURIR_TOKO");
+  const [soModalInitService, setSoModalInitService] = useState<string>("Kurir Toko (Internal)");
   const [isEditExpeditionModalOpen, setIsEditExpeditionModalOpen] = useState(false);
   const [targetProcessingSo, setTargetProcessingSo] = useState<any | null>(null);
   const [isCreatePoModalOpen, setIsCreatePoModalOpen] = useState(false);
@@ -273,7 +314,7 @@ export default function DashboardClient() {
   const [editingSupplier, setEditingSupplier] = useState<any | null>(null);
   const [selectedProductLedger, setSelectedProductLedger] = useState<any | null>(null);
 
-  // Wilayah & RajaOngkir API
+  // Wilayah Toko
   const [provinces, setProvinces] = useState<RegionItem[]>([]);
   const [regencies, setRegencies] = useState<RegionItem[]>([]);
   const [districts, setDistricts] = useState<RegionItem[]>([]);
@@ -286,17 +327,7 @@ export default function DashboardClient() {
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   const [isApiSuccessModalOpen, setIsApiSuccessModalOpen] = useState(false);
 
-  // 1. Force Logout saat pertama kali buka web
-  useEffect(() => {
-    const hasVisited = sessionStorage.getItem("wms_visited_session");
-    if (!hasVisited) {
-      sessionStorage.setItem("wms_visited_session", "true");
-      document.cookie = "admin_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-      router.push("/login");
-    }
-  }, [router]);
-
-  // 2. Session Idle Timeout (5 Menit)
+  // Session Timeout Handler
   const resetIdleTimer = () => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     idleTimerRef.current = setTimeout(() => setIsSessionTimeoutOpen(true), 5 * 60 * 1000);
@@ -316,33 +347,25 @@ export default function DashboardClient() {
   const handleSessionTimeoutLogout = () => {
     setIsSessionTimeoutOpen(false);
     document.cookie = "admin_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+    localStorage.removeItem("wms_user_session");
+    sessionStorage.removeItem("wms_visited_session");
     router.push("/login");
   };
 
-  // 3. Baca Sesi Pengguna Dinamis (Nama Lengkap Asli)
   useEffect(() => {
-    try {
-      const match = document.cookie.split("; ").find((row) => row.startsWith("admin_session="));
-      if (match) {
-        const parsed = JSON.parse(decodeURIComponent(match.split("=")[1]));
-        setCurrentUser({
-          id: parsed.id || parsed.userId || "",
-          role: parsed.role || "STAFF_GUDANG",
-          name: parsed.name || parsed.fullName || "Pengguna",
-          username: parsed.id || parsed.userId || "",
-        });
-      } else {
-        router.push("/login");
-      }
-    } catch {
+    const session = getInitialUserSession();
+    if (session.name || session.id) {
+      setCurrentUser(session);
+    } else {
       router.push("/login");
     }
   }, [router]);
 
+  // Role Checks
   const isRootAdmin = useMemo(() => {
     const roleClean = String(currentUser.role || "").trim().toUpperCase();
     const userClean = String(currentUser.username || currentUser.id || "").trim().toLowerCase();
-    return userClean === "admin" || roleClean.includes("ROOT");
+    return userClean === "admin" || userClean.includes("admin@") || roleClean.includes("ROOT");
   }, [currentUser]);
 
   const isStaff = useMemo(() => {
@@ -354,40 +377,90 @@ export default function DashboardClient() {
     setAlertModal({ isOpen: true, title, message });
   };
 
-  // Load Firestore Data
+  // ROBUST DATA LOADER: Langsung Firestore SDK dengan fallback API
+    async function handleSaveProduct(savedData: any) {
+    try {
+      setLoading(true);
+      if (isEditingProduct) {
+        if (!isRootAdmin) return showAlert("Hanya ROOT_ADMIN yang berhak mengubah data produk.");
+        await updateDoc(doc(db, "products", savedData.sku), {
+          itemName: savedData.itemName.trim(),
+          supplierId: savedData.supplierId || "",
+          supplierName: savedData.supplierName || "",
+          purchasingPrice: Number(savedData.purchasingPrice) || 0,
+          netPrice: Number(savedData.netPrice) || 0,
+          weightInGrams: Number(savedData.weightInGrams) || 0,
+          active: Boolean(savedData.active),
+          status: savedData.active ? "ACTIVE" : "INACTIVE",
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.name || currentUser.id,
+        });
+        showAlert(`Produk ${savedData.sku} berhasil diperbarui!`, "Sukses");
+      } else {
+        const famCode = savedData.familyCode || "FAM-001";
+        const famNum = parseInt(famCode.replace(/[^0-9]/g, ""), 10) || 1;
+        const initStock = Number(savedData.initialStock) || 0;
+
+        await runTransaction(db, async (tx) => {
+          const fCountRef = doc(db, "family_counters", famCode);
+          const fSnap = await tx.get(fCountRef);
+          const curSeq = fSnap.exists() ? (fSnap.data().currentProductNumber || 0) : 0;
+          const nextSeq = curSeq + 1;
+          const candidateSku = `SKU-${String(famNum).padStart(3, "0")}${String(nextSeq).padStart(3, "0")}`;
+
+          tx.set(fCountRef, { familyCode: famCode, currentProductNumber: nextSeq, updatedAt: serverTimestamp() }, { merge: true });
+          tx.set(doc(db, "products", candidateSku), {
+            productId: candidateSku,
+            sku: candidateSku,
+            familyCode: famCode,
+            itemName: savedData.itemName.trim(),
+            supplierId: savedData.supplierId || "",
+            supplierName: savedData.supplierName || "",
+            lastReceiving: "-",
+            stock: initStock,
+            purchasingPrice: Number(savedData.purchasingPrice) || 0,
+            netPrice: Number(savedData.netPrice) || 0,
+            weightInGrams: Number(savedData.weightInGrams) || 0,
+            active: Boolean(savedData.active),
+            status: savedData.active ? "ACTIVE" : "INACTIVE",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            createdBy: currentUser.name || currentUser.id,
+          });
+
+          if (initStock > 0) {
+            const mvRef = doc(collection(db, "stock_movements"));
+            tx.set(mvRef, {
+              movementId: mvRef.id,
+              date: new Date().toISOString().split("T")[0],
+              itemCode: candidateSku,
+              itemNameSnapshot: savedData.itemName.trim(),
+              type: "ADJUSTMENT",
+              referenceId: "INITIAL_STOCK",
+              qtyIn: initStock,
+              qtyOut: 0,
+              previousStock: 0,
+              newStock: initStock,
+              reason: "Inisialisasi Stok Awal Produk",
+              user: currentUser.name || currentUser.id,
+              timestamp: serverTimestamp(),
+            });
+          }
+        });
+        showAlert("Produk baru berhasil disimpan!", "Sukses");
+      }
+      setIsProductModalOpen(false);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menyimpan data produk.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function loadAllData() {
     setLoading(true);
     try {
-      const apiRes = await fetch("/api/portal/data");
-      if (apiRes.ok) {
-        const json = await apiRes.json();
-        if (json.success && json.data) {
-          const d = json.data;
-          setProducts(d.products || []);
-          setFamilies(d.families || []);
-          setCustomers(d.customers || []);
-          setSalesOrders(d.salesOrders || []);
-          setDeliveryOrders(d.deliveryOrders || []);
-          setPurchaseOrders(d.purchaseOrders || []);
-          setReceivings(d.receivings || []);
-          setStockOpnames(d.stockOpnames || []);
-          setStockAdjustments(d.stockAdjustments || []);
-          setStockMovements(d.stockMovements || []);
-          setUsersList(d.users || []);
-          setSuppliers(d.suppliers || []);
-
-          const foundSettings = (d.settings || []).find((s: any) => s.id === "store_info");
-          if (foundSettings) {
-            setStoreSettings((prev: any) => ({ ...prev, ...foundSettings }));
-            if (foundSettings.rajaOngkirApiKey) {
-              setInputApiKey(foundSettings.rajaOngkirApiKey);
-            }
-          }
-          setLoading(false);
-          return;
-        }
-      }
-
       const [
         pSnap, fSnap, cSnap, soSnap, doSnap, poSnap, rcvSnap, sopSnap, adjSnap, mvSnap, setDocSnap, uSnap, suppSnap
       ] = await Promise.all([
@@ -418,8 +491,40 @@ export default function DashboardClient() {
       setStockMovements(mvSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setUsersList(uSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       if (suppSnap) setSuppliers(suppSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+
+      const foundSettings = setDocSnap.docs.find((d) => d.id === "store_info");
+      if (foundSettings) {
+        const sData = foundSettings.data();
+        setStoreSettings((prev: any) => ({ ...prev, ...sData }));
+        if (sData.rajaOngkirApiKey) {
+          setInputApiKey(sData.rajaOngkirApiKey);
+        }
+      }
     } catch (err: any) {
-      console.error("Gagal load Firestore:", err);
+      console.warn("Firestore SDK direct load gagal, mencoba fallback API /api/portal/data:", err);
+      try {
+        const apiRes = await fetch("/api/portal/data");
+        if (apiRes.ok) {
+          const json = await apiRes.json();
+          if (json.success && json.data) {
+            const d = json.data;
+            setProducts(d.products || []);
+            setFamilies(d.families || []);
+            setCustomers(d.customers || []);
+            setSalesOrders(d.salesOrders || []);
+            setDeliveryOrders(d.deliveryOrders || []);
+            setPurchaseOrders(d.purchaseOrders || []);
+            setReceivings(d.receivings || []);
+            setStockOpnames(d.stockOpnames || []);
+            setStockAdjustments(d.stockAdjustments || []);
+            setStockMovements(d.stockMovements || []);
+            setUsersList(d.users || []);
+            setSuppliers(d.suppliers || []);
+          }
+        }
+      } catch (fallbackErr) {
+        console.error("Gagal memuat data:", fallbackErr);
+      }
     } finally {
       setLoading(false);
     }
@@ -427,7 +532,7 @@ export default function DashboardClient() {
 
   useEffect(() => { loadAllData(); }, []);
 
-  // Filtered
+  // Filter Data
   const displayedSalesOrders = useMemo(() => {
     return salesOrders.filter((so) => {
       const matchesStatus = soStatusFilter === "ALL" || (so.status || "").toUpperCase() === soStatusFilter;
@@ -448,7 +553,9 @@ export default function DashboardClient() {
       const sku = String(p.sku || "").toLowerCase();
       const name = String(p.itemName || "").toLowerCase();
       const fam = String(p.familyCode || "").toLowerCase();
-      return sku.includes(q) || name.includes(q) || fam.includes(q);
+      const suppName = String(p.supplierName || "").toLowerCase();
+      const suppId = String(p.supplierId || "").toLowerCase();
+      return sku.includes(q) || name.includes(q) || fam.includes(q) || suppName.includes(q) || suppId.includes(q);
     });
   }, [products, productSearchQuery]);
 
@@ -464,9 +571,9 @@ export default function DashboardClient() {
     return stockMovements.filter((m) => m.itemCode === selectedProductLedger.sku);
   }, [stockMovements, selectedProductLedger]);
 
-  // Load Wilayah Indonesia
+  // Load Wilayah Indonesia (Toko & Customer)
   useEffect(() => {
-    if (currentTab === "settings" && provinces.length === 0) {
+    if ((currentTab === "settings" || isCustomerModalOpen) && provinces.length === 0) {
       setLoadingRegion(true);
       fetch("/api/regions")
         .then((res) => res.json())
@@ -474,8 +581,85 @@ export default function DashboardClient() {
         .catch((err) => console.error("Gagal load provinsi:", err))
         .finally(() => setLoadingRegion(false));
     }
-  }, [currentTab, provinces.length]);
+  }, [currentTab, isCustomerModalOpen, provinces.length]);
 
+  // Handler Wilayah Customer Berjenjang
+  async function handleCustProvinceChange(pCode: string) {
+    const prov = provinces.find((p) => p.id === pCode);
+    setCustomerForm((prev) => ({
+      ...prev,
+      provinceCode: pCode,
+      provinceName: prov?.name || "",
+      regencyCode: "",
+      regencyName: "",
+      districtCode: "",
+      districtName: "",
+      villageCode: "",
+      villageName: "",
+    }));
+    setCustRegencies([]);
+    setCustDistricts([]);
+    setCustVillages([]);
+    if (!pCode) return;
+    setLoadingCustRegion(true);
+    try {
+      const res = await fetch(`/api/regions?type=regencies&code=${pCode}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setCustRegencies(data);
+    } finally { setLoadingCustRegion(false); }
+  }
+
+  async function handleCustRegencyChange(rCode: string) {
+    const reg = custRegencies.find((r) => r.id === rCode);
+    setCustomerForm((prev) => ({
+      ...prev,
+      regencyCode: rCode,
+      regencyName: reg?.name || "",
+      districtCode: "",
+      districtName: "",
+      villageCode: "",
+      villageName: "",
+    }));
+    setCustDistricts([]);
+    setCustVillages([]);
+    if (!rCode) return;
+    setLoadingCustRegion(true);
+    try {
+      const res = await fetch(`/api/regions?type=districts&code=${rCode}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setCustDistricts(data);
+    } finally { setLoadingCustRegion(false); }
+  }
+
+  async function handleCustDistrictChange(dCode: string) {
+    const dist = custDistricts.find((d) => d.id === dCode);
+    setCustomerForm((prev) => ({
+      ...prev,
+      districtCode: dCode,
+      districtName: dist?.name || "",
+      villageCode: "",
+      villageName: "",
+    }));
+    setCustVillages([]);
+    if (!dCode) return;
+    setLoadingCustRegion(true);
+    try {
+      const res = await fetch(`/api/regions?type=villages&code=${dCode}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setCustVillages(data);
+    } finally { setLoadingCustRegion(false); }
+  }
+
+  function handleCustVillageChange(vCode: string) {
+    const vil = custVillages.find((v) => v.id === vCode);
+    setCustomerForm((prev) => ({
+      ...prev,
+      villageCode: vCode,
+      villageName: vil?.name || "",
+    }));
+  }
+
+  // Handler Wilayah Toko
   async function handleProvinceChange(pCode: string) {
     const prov = provinces.find((p) => p.id === pCode);
     setStoreSettings((prev) => ({
@@ -564,7 +748,7 @@ export default function DashboardClient() {
         ...storeSettings,
         storeAddress: fullAddr,
         updatedAt: serverTimestamp(),
-        updatedBy: currentUser.name,
+        updatedBy: currentUser.name || "Administrator",
       }, { merge: true });
       setStoreSettings((prev) => ({ ...prev, storeAddress: fullAddr }));
       showAlert("Alamat resmi toko berhasil disimpan!", "Sukses");
@@ -594,7 +778,7 @@ export default function DashboardClient() {
       } else {
         showAlert(data.message || "API Key tidak bekerja. Periksa kembali kunci Anda.", "Gagal Terhubung");
       }
-    } catch (e: any) {
+    } catch {
       showAlert("Terjadi kendala jaringan saat menghubungi server pengujian.", "Error");
     } finally {
       setIsTestingApiKey(false);
@@ -642,7 +826,7 @@ export default function DashboardClient() {
       setBtStatus(`Terhubung: ${device.name || "Bluetooth Printer"}`);
       setStoreSettings((prev) => ({ ...prev, btPrinterDeviceName: device.name || "Bluetooth Printer" }));
       showAlert(`Printer Bluetooth [${device.name || "Unknown Printer"}] berhasil terhubung!`, "Sukses");
-    } catch (e: any) {
+    } catch {
       setBtStatus("Koneksi Bluetooth Dibatalkan / Gagal");
     }
   }
@@ -714,7 +898,7 @@ export default function DashboardClient() {
     commands.push(...BOLD_ON);
     commands.push(...encoder.encode("OLEH : "));
     commands.push(...BOLD_OFF);
-    commands.push(...encoder.encode(`${currentUser.name}\n`));
+    commands.push(...encoder.encode(`${currentUser.name || currentUser.id}\n`));
 
     commands.push(...FEED_3);
 
@@ -747,7 +931,7 @@ export default function DashboardClient() {
         setLoading(false);
       }
     }
-    showAlert("Printer Bluetooth belum terhubung! Silakan buka menu Pengaturan -> Hardware Printer Thermal Bluetooth, lalu tekan 'Cari Printer Bluetooth' untuk menghubungkannya.", "Printer Belum Siap");
+    showAlert("Printer Bluetooth belum terhubung! Silakan buka menu Pengaturan -> Hardware Printer Thermal Bluetooth, lalu hubungkan printer.", "Printer Belum Siap");
   }
 
   // SO Handlers
@@ -761,7 +945,7 @@ export default function DashboardClient() {
         status: "CANCELLED",
         cancelReason: soCancelReason.trim(),
         cancelledAt: serverTimestamp(),
-        cancelledBy: currentUser.name,
+        cancelledBy: currentUser.name || currentUser.id,
         updatedAt: serverTimestamp(),
       });
       setIsSoCancelConfirmOpen(false);
@@ -783,7 +967,7 @@ export default function DashboardClient() {
       await updateDoc(doc(db, "sales_orders", so.soId || so.id), {
         status: "PROCESSING",
         updatedAt: serverTimestamp(),
-        updatedBy: currentUser.name,
+        updatedBy: currentUser.name || currentUser.id,
       });
       setIsSoDetailModalOpen(false);
       showAlert(`Status SO [${so.soId}] diubah ke PROCESSING!`);
@@ -801,7 +985,7 @@ export default function DashboardClient() {
       await updateDoc(doc(db, "sales_orders", so.soId || so.id), {
         status: "READY TO DELIVER",
         updatedAt: serverTimestamp(),
-        updatedBy: currentUser.name,
+        updatedBy: currentUser.name || currentUser.id,
       });
       setIsSoDetailModalOpen(false);
       showAlert(`SO [${so.soId}] berstatus READY TO DELIVER! Siap diterbitkan DO.`);
@@ -847,7 +1031,7 @@ export default function DashboardClient() {
           const dedQty = Number(it.qty || it.quantity || 1);
           const newStock = oldStock - dedQty;
 
-          tx.update(pRef, { stock: newStock, updatedAt: serverTimestamp(), updatedBy: currentUser.name });
+          tx.update(pRef, { stock: newStock, updatedAt: serverTimestamp(), updatedBy: currentUser.name || currentUser.id });
 
           const mvRef = doc(collection(db, "stock_movements"));
           tx.set(mvRef, {
@@ -862,12 +1046,12 @@ export default function DashboardClient() {
             previousStock: oldStock,
             newStock: newStock,
             reason: `Pengiriman DO ${generatedDoId} (SO: ${so.soId})`,
-            user: currentUser.name,
+            user: currentUser.name || currentUser.id,
             timestamp: serverTimestamp(),
           });
         }
 
-        tx.update(soRef, { status: "DELIVERY ORDER", updatedAt: serverTimestamp(), updatedBy: currentUser.name });
+        tx.update(soRef, { status: "DELIVERY ORDER", updatedAt: serverTimestamp(), updatedBy: currentUser.name || currentUser.id });
 
         tx.set(doc(db, "delivery_orders", generatedDoId), {
           doId: generatedDoId,
@@ -888,7 +1072,7 @@ export default function DashboardClient() {
           shippingServiceName: so.shippingServiceName || "",
           items: so.items || [],
           isStockDeducted: true,
-          createdBy: currentUser.name,
+          createdBy: currentUser.name || currentUser.id,
           createdAt: serverTimestamp(),
           status: "DELIVERED",
         });
@@ -930,7 +1114,7 @@ export default function DashboardClient() {
             const returnedQty = Number(it.qty || it.quantity || 1);
             const restoredStock = curStock + returnedQty;
 
-            tx.update(pRef, { stock: restoredStock, updatedAt: serverTimestamp(), updatedBy: currentUser.name });
+            tx.update(pRef, { stock: restoredStock, updatedAt: serverTimestamp(), updatedBy: currentUser.name || currentUser.id });
 
             const mvRef = doc(collection(db, "stock_movements"));
             tx.set(mvRef, {
@@ -945,7 +1129,7 @@ export default function DashboardClient() {
               previousStock: curStock,
               newStock: restoredStock,
               reason: `Pembatalan DO ${doTargetId}: ${doCancelReason.trim()}`,
-              user: currentUser.name,
+              user: currentUser.name || currentUser.id,
               timestamp: serverTimestamp(),
             });
           }
@@ -954,7 +1138,7 @@ export default function DashboardClient() {
         tx.update(doRef, {
           status: "CANCELLED",
           cancelReason: doCancelReason.trim(),
-          cancelledBy: currentUser.name,
+          cancelledBy: currentUser.name || currentUser.id,
           cancelledAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -964,7 +1148,7 @@ export default function DashboardClient() {
           tx.update(soRef, {
             status: "READY TO DELIVER",
             updatedAt: serverTimestamp(),
-            updatedBy: currentUser.name,
+            updatedBy: currentUser.name || currentUser.id,
           });
         }
       });
@@ -1004,7 +1188,7 @@ export default function DashboardClient() {
         phys,
         phys,
         variance,
-        it.countedBy || currentUser.name,
+        it.countedBy || currentUser.name || currentUser.id,
       ];
     });
     downloadExcel(reviewSopTarget.documentNo || reviewSopTarget.sopId, "SOP_Review", headers, rows);
@@ -1032,7 +1216,7 @@ export default function DashboardClient() {
             const physical = Number(it.physicalQty ?? currentStock);
             const diff = physical - currentStock;
 
-            tx.update(pRef, { stock: physical, updatedAt: serverTimestamp(), updatedBy: currentUser.name });
+            tx.update(pRef, { stock: physical, updatedAt: serverTimestamp(), updatedBy: currentUser.name || currentUser.id });
 
             if (diff !== 0) {
               const mvRef = doc(collection(db, "stock_movements"));
@@ -1048,7 +1232,7 @@ export default function DashboardClient() {
                 previousStock: currentStock,
                 newStock: physical,
                 reason: `Stock Opname Posting ${postId} (Review: ${srvwId})`,
-                user: currentUser.name,
+                user: currentUser.name || currentUser.id,
                 timestamp: serverTimestamp(),
               });
             }
@@ -1060,7 +1244,7 @@ export default function DashboardClient() {
           items: reviewItemsData,
           reviewDocumentNo: srvwId,
           postingId: postId,
-          postedBy: currentUser.name,
+          postedBy: currentUser.name || currentUser.id,
           postedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -1077,7 +1261,7 @@ export default function DashboardClient() {
     }
   }
 
-  // Staff CRUD Handlers (Auto-increment ST-xx)
+  // Staff CRUD
   async function handleOpenAddStaff() {
     if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak menambahkan staff!", "Akses Ditolak");
     try {
@@ -1092,7 +1276,7 @@ export default function DashboardClient() {
       setStaffForm({ staffId: generatedStaffId, fullName: "", userId: "", password: "" });
       setStaffModalMode("create");
       setIsStaffModalOpen(true);
-    } catch (err: any) {
+    } catch {
       const fallbackId = `ST-${String(usersList.length + 1).padStart(2, "0")}`;
       setStaffForm({ staffId: fallbackId, fullName: "", userId: "", password: "" });
       setStaffModalMode("create");
@@ -1137,7 +1321,7 @@ export default function DashboardClient() {
           fullName: staffForm.fullName.trim(),
           name: staffForm.fullName.trim(),
           updatedAt: serverTimestamp(),
-          updatedBy: currentUser.name,
+          updatedBy: currentUser.name || currentUser.id,
         });
         showAlert(`Data staff [${cleanUserId}] berhasil diperbarui!`, "Sukses");
       }
@@ -1170,7 +1354,7 @@ export default function DashboardClient() {
     }
   }
 
-  // Supplier CRUD Handlers
+  // Supplier CRUD
   async function handleOpenAddSupplier() {
     if (!isRootAdmin) return showAlert("Hanya Root Admin yang berhak mengelola supplier!", "Akses Ditolak");
     setEditingSupplier(null);
@@ -1188,7 +1372,7 @@ export default function DashboardClient() {
           phone: formData.phone.trim(),
           address: formData.address.trim(),
           updatedAt: serverTimestamp(),
-          updatedBy: currentUser.name,
+          updatedBy: currentUser.name || currentUser.id,
         });
         showAlert(`Supplier [${suppKey}] berhasil diperbarui!`, "Sukses");
       } else {
@@ -1207,7 +1391,7 @@ export default function DashboardClient() {
             address: formData.address.trim(),
             active: true,
             createdAt: serverTimestamp(),
-            createdBy: currentUser.name,
+            createdBy: currentUser.name || currentUser.id,
           });
           return genId;
         });
@@ -1238,10 +1422,76 @@ export default function DashboardClient() {
     }
   }
 
-  // Customer CRUD Handlers (CUST-XXXX)
+  // Customer CRUD dengan Input Alamat Wilayah Berjenjang
+  async function handleOpenCustomerModal(mode: "create" | "edit", cust?: any) {
+    setCustomerModalMode(mode);
+    setCustRegencies([]);
+    setCustDistricts([]);
+    setCustVillages([]);
+
+    if (mode === "create") {
+      setCustomerForm({
+        customerId: "",
+        customerName: "",
+        phone: "",
+        email: "",
+        provinceCode: "",
+        provinceName: "",
+        regencyCode: "",
+        regencyName: "",
+        districtCode: "",
+        districtName: "",
+        villageCode: "",
+        villageName: "",
+        detailAddress: "",
+        postalCode: "",
+      });
+    } else if (cust) {
+      setCustomerForm({
+        customerId: cust.id || cust.customerId || "",
+        customerName: cust.customerName || "",
+        phone: cust.phone || "",
+        email: cust.email || "",
+        provinceCode: cust.provinceCode || "",
+        provinceName: cust.provinceName || "",
+        regencyCode: cust.regencyCode || "",
+        regencyName: cust.regencyName || "",
+        districtCode: cust.districtCode || "",
+        districtName: cust.districtName || "",
+        villageCode: cust.villageCode || "",
+        villageName: cust.villageName || "",
+        detailAddress: cust.detailAddress || cust.address || "",
+        postalCode: cust.postalCode || "",
+      });
+
+      if (cust.provinceCode) {
+        fetch(`/api/regions?type=regencies&code=${cust.provinceCode}`)
+          .then((r) => r.json())
+          .then((d) => { if (Array.isArray(d)) setCustRegencies(d); });
+      }
+      if (cust.regencyCode) {
+        fetch(`/api/regions?type=districts&code=${cust.regencyCode}`)
+          .then((r) => r.json())
+          .then((d) => { if (Array.isArray(d)) setCustDistricts(d); });
+      }
+      if (cust.districtCode) {
+        fetch(`/api/regions?type=villages&code=${cust.districtCode}`)
+          .then((r) => r.json())
+          .then((d) => { if (Array.isArray(d)) setCustVillages(d); });
+      }
+    }
+    setIsCustomerModalOpen(true);
+  }
+
   async function handleSaveCustomer(e: React.FormEvent) {
     e.preventDefault();
     if (!customerForm.customerName.trim()) return showAlert("Nama Customer wajib diisi!");
+    if (!customerForm.provinceName || !customerForm.regencyName || !customerForm.districtName || !customerForm.villageName) {
+      return showAlert("Pilih wilayah secara lengkap (Provinsi, Kabupaten/Kota, Kecamatan, dan Desa/Kelurahan)!");
+    }
+
+    const fullFormattedAddress = `${customerForm.detailAddress ? customerForm.detailAddress.trim() + ", " : ""}Desa/Kel. ${customerForm.villageName}, Kec. ${customerForm.districtName}, ${customerForm.regencyName}, ${customerForm.provinceName}${customerForm.postalCode ? " " + customerForm.postalCode : ""}`;
+
     try {
       setLoading(true);
       if (customerModalMode === "create") {
@@ -1257,10 +1507,20 @@ export default function DashboardClient() {
             customerName: customerForm.customerName.trim(),
             phone: customerForm.phone.trim(),
             email: customerForm.email.trim(),
-            address: customerForm.address.trim(),
-            displayAddress: customerForm.displayAddress.trim() || customerForm.address.trim(),
+            provinceCode: customerForm.provinceCode,
+            provinceName: customerForm.provinceName,
+            regencyCode: customerForm.regencyCode,
+            regencyName: customerForm.regencyName,
+            districtCode: customerForm.districtCode,
+            districtName: customerForm.districtName,
+            villageCode: customerForm.villageCode,
+            villageName: customerForm.villageName,
+            detailAddress: customerForm.detailAddress.trim(),
+            postalCode: customerForm.postalCode.trim(),
+            address: fullFormattedAddress,
+            displayAddress: fullFormattedAddress,
             createdAt: serverTimestamp(),
-            createdBy: currentUser.name,
+            createdBy: currentUser.name || currentUser.id,
           });
           return genId;
         });
@@ -1270,10 +1530,20 @@ export default function DashboardClient() {
           customerName: customerForm.customerName.trim(),
           phone: customerForm.phone.trim(),
           email: customerForm.email.trim(),
-          address: customerForm.address.trim(),
-          displayAddress: customerForm.displayAddress.trim() || customerForm.address.trim(),
+          provinceCode: customerForm.provinceCode,
+          provinceName: customerForm.provinceName,
+          regencyCode: customerForm.regencyCode,
+          regencyName: customerForm.regencyName,
+          districtCode: customerForm.districtCode,
+          districtName: customerForm.districtName,
+          villageCode: customerForm.villageCode,
+          villageName: customerForm.villageName,
+          detailAddress: customerForm.detailAddress.trim(),
+          postalCode: customerForm.postalCode.trim(),
+          address: fullFormattedAddress,
+          displayAddress: fullFormattedAddress,
           updatedAt: serverTimestamp(),
-          updatedBy: currentUser.name,
+          updatedBy: currentUser.name || currentUser.id,
         });
         showAlert(`Data customer [${customerForm.customerId}] berhasil diperbarui!`, "Sukses");
       }
@@ -1306,7 +1576,6 @@ export default function DashboardClient() {
       {isSessionTimeoutOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-70 animate-fadeIn">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-rose-200 text-center">
-            <div className="text-3xl mb-2">⏱️</div>
             <h3 className="text-base font-bold text-rose-950 mb-2">Sesi Berakhir</h3>
             <p className="text-xs text-slate-600 mb-5 leading-relaxed">Sesi berakhir, otomatis keluar.</p>
             <button
@@ -1335,23 +1604,20 @@ export default function DashboardClient() {
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       }`}>
         <div className="p-5 border-b border-[#6E354F]">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🧕</span>
-            <h1 className="text-base font-bold text-white tracking-wide">WMS Atin&apos;s Coll</h1>
-          </div>
+          <h1 className="text-base font-bold text-white tracking-wide">WMS Atin&apos;s Collection</h1>
           <p className="text-[11px] text-rose-300 mt-0.5">Warehouse Management System</p>
           <div className="mt-3 px-3 py-1.5 bg-[#5C2B42] rounded-lg text-xs flex justify-between items-center text-rose-200">
             <span className="truncate pr-2">
-              Login: <b className="text-white">{currentUser.name || "Pengguna"}</b>
+              Login: <b className="text-white">{currentUser.name || currentUser.id || "Administrator"}</b>
             </span>
             <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase shrink-0 ${
-              currentUser.role === "ROOT_ADMIN" 
+              isRootAdmin 
                 ? "bg-amber-500 text-white" 
                 : currentUser.role === "ADMIN_GUDANG" 
                 ? "bg-purple-500 text-white" 
                 : "bg-blue-500 text-white"
             }`}>
-              {currentUser.role}
+              {isRootAdmin ? "ROOT_ADMIN" : (currentUser.role || "STAFF_GUDANG")}
             </span>
           </div>
         </div>
@@ -1533,8 +1799,8 @@ export default function DashboardClient() {
                           setSoModalInitItems([]);
                           setSoModalInitRates([]);
                           setSoModalInitCost(0);
-                          setSoModalInitCourier("");
-                          setSoModalInitService("");
+                          setSoModalInitCourier("KURIR_TOKO");
+                          setSoModalInitService("Kurir Toko (Internal)");
                           setIsSoModalOpen(true);
                         }}
                         className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow whitespace-nowrap"
@@ -1550,9 +1816,9 @@ export default function DashboardClient() {
                         <tr>
                           <th className="p-2.5">No SO</th>
                           <th className="p-2.5">Tanggal</th>
-                          <th className="p-2.5">Customer & Alamat</th>
+                          <th className="p-2.5">Customer &amp; Alamat</th>
                           <th className="p-2.5">Total Kuantitas</th>
-                          <th className="p-2.5">Ekspedisi & Ongkir</th>
+                          <th className="p-2.5">Ekspedisi &amp; Ongkir</th>
                           <th className="p-2.5">Total Bayar</th>
                           <th className="p-2.5">Status</th>
                           <th className="p-2.5 text-center">Aksi</th>
@@ -1649,7 +1915,7 @@ export default function DashboardClient() {
                                 onClick={() => handlePrintDoLabel(d)}
                                 className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded text-[11px] font-bold shadow-xs"
                               >
-                                🖨️ Cetak Label (Bluetooth)
+                                Cetak Label (Bluetooth)
                               </button>
                               {d.status !== "CANCELLED" && isRootAdmin && (
                                 <button
@@ -1704,13 +1970,13 @@ export default function DashboardClient() {
                 <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <div>
-                      <span className="text-xs font-bold text-rose-950 uppercase">Master Produk & Stok Gudang</span>
+                      <span className="text-xs font-bold text-rose-950 uppercase">Master Produk &amp; Stok Gudang</span>
                       <p className="text-[11px] text-slate-500">Katalog dan kuantitas persediaan fisik terkini</p>
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto">
                       <input
                         type="text"
-                        placeholder="Cari Produk (SKU / Nama / Family)..."
+                        placeholder="Cari Produk (SKU / Nama / Family / Supplier)..."
                         value={productSearchQuery}
                         onChange={(e) => setProductSearchQuery(e.target.value)}
                         className="p-1.5 px-3 border border-rose-200 rounded-lg text-xs outline-none w-full sm:w-64 bg-rose-50/40 focus:bg-white"
@@ -1750,6 +2016,7 @@ export default function DashboardClient() {
                           <th className="p-2.5">Stok Fisik</th>
                           <th className="p-2.5">HPP (Beli)</th>
                           <th className="p-2.5">Harga Jual</th>
+                          <th className="p-2.5">Supplier</th>
                           <th className="p-2.5">Status</th>
                           <th className="p-2.5 text-right">Aksi</th>
                         </tr>
@@ -1763,6 +2030,13 @@ export default function DashboardClient() {
                             <td className="p-2.5 font-bold text-emerald-600 whitespace-nowrap">{p.stock || 0} pcs</td>
                             <td className="p-2.5 whitespace-nowrap">{formatRupiah(Number(p.purchasingPrice || 0))}</td>
                             <td className="p-2.5 whitespace-nowrap font-bold text-rose-900">{formatRupiah(Number(p.netPrice || 0))}</td>
+                            <td className="p-2.5 whitespace-nowrap font-medium text-slate-700">
+                              {p.supplierName ? (
+                                <span title={p.supplierId || ""}>{p.supplierName}</span>
+                              ) : (
+                                <span className="text-slate-400 italic">-</span>
+                              )}
+                            </td>
                             <td className="p-2.5 whitespace-nowrap">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.active ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
                                 {p.active ? "Aktif" : "Nonaktif"}
@@ -1978,7 +2252,7 @@ export default function DashboardClient() {
                                 onClick={() => handleOpenSopReview(sop)}
                                 className="px-2.5 py-1 bg-[#BE185D] hover:bg-[#9D174D] text-white rounded text-[11px] font-bold shadow-xs"
                               >
-                                ✍️ Review & Post
+                                ✍️ Review &amp; Post
                               </button>
                             )}
 
@@ -2262,7 +2536,7 @@ export default function DashboardClient() {
               </div>
 
               <div className="bg-white rounded-xl border border-rose-100 p-5 shadow-xs space-y-4">
-                {/* 5.1 REPORT SO (PDF Merah & Excel) */}
+                {/* 5.1 REPORT SO */}
                 {reportSubTab === "so" && (
                   <div className="space-y-3">
                     <span className="text-xs font-bold text-rose-950 uppercase">Laporan Sales Order</span>
@@ -2343,7 +2617,7 @@ export default function DashboardClient() {
                   </div>
                 )}
 
-                {/* 5.2 REPORT DO (PDF Merah & Excel) */}
+                {/* 5.2 REPORT DO */}
                 {reportSubTab === "do" && (
                   <div className="space-y-3">
                     <span className="text-xs font-bold text-rose-950 uppercase">Laporan Delivery Order</span>
@@ -2418,7 +2692,7 @@ export default function DashboardClient() {
                   </div>
                 )}
 
-                {/* 5.3 REPORT PO (PDF Merah) */}
+                {/* 5.3 REPORT PO */}
                 {reportSubTab === "po" && (
                   <div className="space-y-3">
                     <span className="text-xs font-bold text-rose-950 uppercase">Laporan Purchase Order</span>
@@ -2473,7 +2747,7 @@ export default function DashboardClient() {
                   </div>
                 )}
 
-                {/* 5.4 REPORT RECEIVING (PDF Merah) */}
+                {/* 5.4 REPORT RECEIVING */}
                 {reportSubTab === "receiving" && (
                   <div className="space-y-3">
                     <span className="text-xs font-bold text-rose-950 uppercase">Laporan Receiving</span>
@@ -2520,7 +2794,7 @@ export default function DashboardClient() {
                   </div>
                 )}
 
-                {/* 5.5 REPORT STOCK OPNAME (PDF Merah & Excel Lengkap) */}
+                {/* 5.5 REPORT STOCK OPNAME */}
                 {reportSubTab === "opname" && (
                   <div className="space-y-3">
                     <span className="text-xs font-bold text-rose-950 uppercase">Laporan Stock Opname</span>
@@ -2552,7 +2826,7 @@ export default function DashboardClient() {
                                 phys,
                                 phys,
                                 variance,
-                                it.countedBy || sop.initializedBy || "-",
+                                it.countedBy || currentUser.name || currentUser.id,
                               ];
                             });
 
@@ -2587,7 +2861,7 @@ export default function DashboardClient() {
                   </div>
                 )}
 
-                {/* 5.6 REPORT CUSTOMER (ID CUST-XXXX yang sudah ditentukan) */}
+                {/* 5.6 REPORT CUSTOMER */}
                 {reportSubTab === "customer" && (
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
@@ -2672,7 +2946,7 @@ export default function DashboardClient() {
                     <div className="overflow-x-auto text-xs">
                       <table className="w-full text-left">
                         <thead className="bg-rose-50 text-rose-900 font-bold">
-                          <tr><th className="p-2">SKU</th><th className="p-2">Nama Produk</th><th className="p-2.5">Stok Fisik</th><th className="p-2">HPP (Beli)</th><th className="p-2.5">Harga Net</th></tr>
+                          <tr><th className="p-2">SKU</th><th className="p-2">Nama Produk</th><th className="p-2.5">Stok Fisik</th><th className="p-2">HPP (Beli)</th><th className="p-2">Harga Net</th></tr>
                         </thead>
                         <tbody className="divide-y divide-rose-50">
                           {products.map((p) => (
@@ -2690,7 +2964,7 @@ export default function DashboardClient() {
                     <div className="overflow-x-auto text-xs">
                       <table className="w-full text-left">
                         <thead className="bg-rose-50 text-rose-900 font-bold">
-                          <tr><th className="p-2">No DO / Tanggal</th><th className="p-2">Penerima</th><th className="p-2">Total Pcs</th><th className="p-2">Total Nilai</th></tr>
+                          <tr><th className="p-2">No DO / Tanggal</th><th className="p-2">Penerima</th><th className="p-2.5">Total Pcs</th><th className="p-2">Total Nilai</th></tr>
                         </thead>
                         <tbody className="divide-y divide-rose-50">
                           {deliveryOrders.map((d) => (
@@ -2954,7 +3228,7 @@ export default function DashboardClient() {
             </div>
           )}
 
-          {/* TAB 7: HUMAN (STAFF CRUD, SUPPLIER CRUD, & CUSTOMER CRUD) */}
+          {/* TAB 7: HUMAN (STAFF CRUD, SUPPLIER CRUD, & CUSTOMER CRUD DENGAN WILAYAH BERJENJANG) */}
           {currentTab === "human" && isRootAdmin && (
             <div className="space-y-4">
               <div className="flex gap-2 border-b border-rose-200 pb-2">
@@ -3135,15 +3409,11 @@ export default function DashboardClient() {
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="text-xs font-bold text-rose-950 uppercase">Kelola Data Customer (CUST-XXXX)</span>
-                      <p className="text-[11px] text-slate-500">Basis data pelanggan dan tujuan pengiriman</p>
+                      <p className="text-[11px] text-slate-500">Basis data pelanggan dengan alamat terstruktur kewilayahan Indonesia</p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        setCustomerModalMode("create");
-                        setCustomerForm({ customerId: "", customerName: "", phone: "", email: "", address: "", displayAddress: "" });
-                        setIsCustomerModalOpen(true);
-                      }}
+                      onClick={() => handleOpenCustomerModal("create")}
                       className="px-3.5 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-lg shadow"
                     >
                       + Tambah Customer Baru
@@ -3158,7 +3428,7 @@ export default function DashboardClient() {
                           <th className="p-2.5">Nama Customer</th>
                           <th className="p-2.5">No. Telepon / WA</th>
                           <th className="p-2.5">Email</th>
-                          <th className="p-2.5">Alamat Pengiriman</th>
+                          <th className="p-2.5">Alamat Pengiriman Lengkap</th>
                           <th className="p-2.5 text-right">Aksi</th>
                         </tr>
                       </thead>
@@ -3171,22 +3441,11 @@ export default function DashboardClient() {
                               <td className="p-2.5 font-bold">{c.customerName}</td>
                               <td className="p-2.5 font-mono">{c.phone || "-"}</td>
                               <td className="p-2.5">{c.email || "-"}</td>
-                              <td className="p-2.5 max-w-xs truncate">{c.displayAddress || c.address || "-"}</td>
+                              <td className="p-2.5 max-w-sm truncate">{c.displayAddress || c.address || "-"}</td>
                               <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setCustomerModalMode("edit");
-                                    setCustomerForm({
-                                      customerId: c.id || c.customerId,
-                                      customerName: c.customerName,
-                                      phone: c.phone || "",
-                                      email: c.email || "",
-                                      address: c.address || "",
-                                      displayAddress: c.displayAddress || c.address || "",
-                                    });
-                                    setIsCustomerModalOpen(true);
-                                  }}
+                                  onClick={() => handleOpenCustomerModal("edit", c)}
                                   className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold"
                                 >
                                   ✏️ Edit
@@ -3298,8 +3557,8 @@ export default function DashboardClient() {
                       setSoModalInitItems(selectedSoDetail.items || []);
                       setSoModalInitRates(selectedSoDetail.shippingRatesSnapshot || []);
                       setSoModalInitCost(selectedSoDetail.shippingCost || 0);
-                      setSoModalInitCourier(selectedSoDetail.shippingCourier || "");
-                      setSoModalInitService(selectedSoDetail.shippingServiceName || "");
+                      setSoModalInitCourier(selectedSoDetail.shippingCourier || "KURIR_TOKO");
+                      setSoModalInitService(selectedSoDetail.shippingServiceName || "Kurir Toko (Internal)");
                       setIsSoDetailModalOpen(false);
                       setIsSoModalOpen(true);
                     }}
@@ -3324,7 +3583,7 @@ export default function DashboardClient() {
                     onClick={() => {
                       let rates = selectedSoDetail.shippingRatesSnapshot || [];
                       if (!rates || rates.length === 0) {
-                        rates = [{ courier: selectedSoDetail.shippingCourier || "JNE", serviceName: selectedSoDetail.shippingServiceName || "REG", cost: Number(selectedSoDetail.shippingCost || 0), etd: "1-3 Hari" }];
+                        rates = [{ courier: selectedSoDetail.shippingCourier || "KURIR_TOKO", serviceName: selectedSoDetail.shippingServiceName || "Kurir Toko (Internal)", cost: Number(selectedSoDetail.shippingCost || 0), etd: "1 Hari" }];
                       }
                       setTargetProcessingSo({ ...selectedSoDetail, shippingRatesSnapshot: rates });
                       setIsEditExpeditionModalOpen(true);
@@ -3430,7 +3689,7 @@ export default function DashboardClient() {
                         <td className={`p-2 text-center font-bold ${diff > 0 ? "text-emerald-600" : diff < 0 ? "text-red-600" : "text-slate-500"}`}>
                           {diff > 0 ? `+${diff}` : diff}
                         </td>
-                        <td className="p-2 text-slate-500">{it.countedBy || currentUser.name}</td>
+                        <td className="p-2 text-slate-500">{it.countedBy || currentUser.name || currentUser.id}</td>
                       </tr>
                     );
                   })}
@@ -3451,7 +3710,7 @@ export default function DashboardClient() {
                 onClick={handleConfirmPostStockOpname}
                 className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow"
               >
-                ✓ Selesai Review & Posting (POST-20261016-XXXX)
+                ✓ Selesai Review &amp; Posting (POST-20261016-XXXX)
               </button>
             </div>
           </div>
@@ -3485,11 +3744,10 @@ export default function DashboardClient() {
         </div>
       )}
 
-      {/* MODAL PEMBATALAN DO (ROOT ADMIN ONLY) */}
+      {/* MODAL PEMBATALAN DO */}
       {isDoCancelConfirmOpen && doCancelTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-70 animate-fadeIn">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-red-300">
-            <div className="text-red-600 text-2xl mb-1">⚠️</div>
             <h3 className="text-base font-bold text-red-950 mb-1">Konfirmasi Pembatalan Delivery Order</h3>
             <p className="text-xs text-slate-600 mb-3 leading-relaxed">
               Pembatalan DO <b>{doCancelTarget.doId}</b> akan mengembalikan saldo stok ke master produk dan mencatatnya ke buku mutasi (ledger).
@@ -3564,7 +3822,7 @@ export default function DashboardClient() {
                       expedition: targetProcessingSo.shippingServiceName || "",
                       total: newTotal,
                       updatedAt: serverTimestamp(),
-                      updatedBy: currentUser.name,
+                      updatedBy: currentUser.name || currentUser.id,
                     });
 
                     showAlert(`Ekspedisi SO [${targetProcessingSo.soId}] berhasil diubah!`, "Sukses");
@@ -3649,58 +3907,153 @@ export default function DashboardClient() {
         </div>
       )}
 
-      {/* MODAL CRUD CUSTOMER */}
+      {/* MODAL CRUD CUSTOMER DENGAN WILAYAH INDONESIA BERJENJANG */}
       {isCustomerModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-60 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-rose-100">
-            <h3 className="text-base font-bold text-rose-950 mb-3">
-              {customerModalMode === "create" ? "Tambah Customer Baru" : `Edit Data Customer (${customerForm.customerId})`}
-            </h3>
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl border border-rose-100 max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-start border-b border-rose-100 pb-3 mb-3">
+              <div>
+                <h3 className="text-base font-bold text-rose-950">
+                  {customerModalMode === "create" ? "Tambah Customer Baru" : `Edit Data Customer (${customerForm.customerId})`}
+                </h3>
+                <p className="text-[11px] text-slate-500">Pilih alamat lengkap berdasarkan data kewilayahan resmi Indonesia</p>
+              </div>
+              {loadingCustRegion && <span className="text-[10px] text-rose-600 font-bold animate-pulse">Memuat wilayah...</span>}
+            </div>
+
             <form onSubmit={handleSaveCustomer} className="space-y-3 text-xs">
               <div>
-                <label className="font-semibold block mb-1">Nama Customer *</label>
+                <label className="font-semibold block mb-1">Nama Lengkap Customer *</label>
                 <input
                   type="text"
                   required
-                  placeholder="Nama Lengkap Customer"
+                  placeholder="misal: Siti Nurhaliza"
                   value={customerForm.customerName}
                   onChange={(e) => setCustomerForm({ ...customerForm, customerName: e.target.value })}
                   className="w-full p-2 border border-rose-200 rounded-lg outline-none"
                 />
               </div>
-              <div>
-                <label className="font-semibold block mb-1">No. Handphone / WhatsApp</label>
-                <input
-                  type="text"
-                  placeholder="08xxxxxxxx"
-                  value={customerForm.phone}
-                  onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
-                  className="w-full p-2 border border-rose-200 rounded-lg outline-none font-mono"
-                />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold block mb-1">No. Handphone / WA</label>
+                  <input
+                    type="text"
+                    placeholder="08xxxxxxxx"
+                    value={customerForm.phone}
+                    onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
+                    className="w-full p-2 border border-rose-200 rounded-lg outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold block mb-1">Email</label>
+                  <input
+                    type="email"
+                    placeholder="customer@domain.com"
+                    value={customerForm.email}
+                    onChange={(e) => setCustomerForm({ ...customerForm, email: e.target.value })}
+                    className="w-full p-2 border border-rose-200 rounded-lg outline-none"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="font-semibold block mb-1">Email</label>
-                <input
-                  type="email"
-                  placeholder="customer@domain.com"
-                  value={customerForm.email}
-                  onChange={(e) => setCustomerForm({ ...customerForm, email: e.target.value })}
-                  className="w-full p-2 border border-rose-200 rounded-lg outline-none"
-                />
+
+              {/* WILAYAH INDONESIA BERJENJANG */}
+              <div className="p-3 bg-rose-50/50 rounded-xl border border-rose-100 space-y-2.5">
+                <span className="font-bold text-rose-950 block">Alamat Wilayah Pengiriman *</span>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="font-semibold block mb-1 text-slate-700">1. Provinsi</label>
+                    <select
+                      required
+                      value={customerForm.provinceCode}
+                      onChange={(e) => handleCustProvinceChange(e.target.value)}
+                      className="w-full p-2 border border-rose-200 rounded-lg bg-white outline-none"
+                    >
+                      <option value="">-- Pilih Provinsi --</option>
+                      {provinces.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold block mb-1 text-slate-700">2. Kabupaten / Kota</label>
+                    <select
+                      required
+                      disabled={!customerForm.provinceCode || custRegencies.length === 0}
+                      value={customerForm.regencyCode}
+                      onChange={(e) => handleCustRegencyChange(e.target.value)}
+                      className="w-full p-2 border border-rose-200 rounded-lg bg-white outline-none disabled:bg-slate-100"
+                    >
+                      <option value="">-- Pilih Kab/Kota --</option>
+                      {custRegencies.map((r) => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold block mb-1 text-slate-700">3. Kecamatan</label>
+                    <select
+                      required
+                      disabled={!customerForm.regencyCode || custDistricts.length === 0}
+                      value={customerForm.districtCode}
+                      onChange={(e) => handleCustDistrictChange(e.target.value)}
+                      className="w-full p-2 border border-rose-200 rounded-lg bg-white outline-none disabled:bg-slate-100"
+                    >
+                      <option value="">-- Pilih Kecamatan --</option>
+                      {custDistricts.map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold block mb-1 text-slate-700">4. Desa / Kelurahan</label>
+                    <select
+                      required
+                      disabled={!customerForm.districtCode || custVillages.length === 0}
+                      value={customerForm.villageCode}
+                      onChange={(e) => handleCustVillageChange(e.target.value)}
+                      className="w-full p-2 border border-rose-200 rounded-lg bg-white outline-none disabled:bg-slate-100"
+                    >
+                      <option value="">-- Pilih Desa/Kel. --</option>
+                      {custVillages.map((v) => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-700">Detail Alamat (Jalan, No Rumah, RT/RW)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="misal: Jl. Cempaka No. 12 RT 01/04"
+                    value={customerForm.detailAddress}
+                    onChange={(e) => setCustomerForm({ ...customerForm, detailAddress: e.target.value })}
+                    className="w-full p-2 border border-rose-200 rounded-lg outline-none bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-700">Kode Pos</label>
+                  <input
+                    type="text"
+                    placeholder="40377"
+                    value={customerForm.postalCode}
+                    onChange={(e) => setCustomerForm({ ...customerForm, postalCode: e.target.value })}
+                    className="w-full p-2 border border-rose-200 rounded-lg outline-none bg-white font-mono"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="font-semibold block mb-1">Alamat Lengkap Pengiriman</label>
-                <textarea
-                  rows={2}
-                  placeholder="Jalan, No Rumah, RT/RW, Kota, Kode Pos"
-                  value={customerForm.address}
-                  onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value, displayAddress: e.target.value })}
-                  className="w-full p-2 border border-rose-200 rounded-lg outline-none"
-                />
-              </div>
+
               <div className="flex justify-end gap-2 pt-2 border-t border-rose-100">
                 <button type="button" onClick={() => setIsCustomerModalOpen(false)} className="px-3.5 py-1.5 bg-slate-100 rounded-lg font-bold">Batal</button>
-                <button type="submit" className="px-4 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white rounded-lg font-bold shadow">Simpan Customer</button>
+                <button type="submit" className="px-4 py-1.5 bg-[#BE185D] hover:bg-[#9D174D] text-white rounded-lg font-bold shadow">
+                  {customerModalMode === "create" ? "Simpan Customer" : "Perbarui Customer"}
+                </button>
               </div>
             </form>
           </div>
@@ -3715,10 +4068,7 @@ export default function DashboardClient() {
         suppliers={suppliers}
         initialData={productFormData}
         onClose={() => setIsProductModalOpen(false)}
-        onConfirmSave={async (savedData: any) => {
-          setIsProductModalOpen(false);
-          loadAllData();
-        }}
+        onConfirmSave={handleSaveProduct}
       />
 
       <StockAdjustmentModal
@@ -3758,9 +4108,76 @@ export default function DashboardClient() {
         initialCourier={soModalInitCourier}
         initialService={soModalInitService}
         onClose={() => setIsSoModalOpen(false)}
-        onSaveSo={async () => {
-          setIsSoModalOpen(false);
-          loadAllData();
+        onSaveSo={async (payload: any) => {
+          try {
+            setLoading(true);
+            const { editingSoId, selectedCustomer, soItems, shippingRates, shippingCost, courierCode, serviceName } = payload;
+            const today = new Date();
+            const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
+            const displayDate = today.toISOString().split("T")[0];
+
+            const subtotal = soItems.reduce((acc: number, it: any) => acc + it.subtotal, 0);
+            const totalWeight = soItems.reduce((acc: number, it: any) => acc + (it.weightInGrams || 0) * it.qty, 0);
+            const grandTotal = subtotal + shippingCost;
+            const addr = selectedCustomer.displayAddress || selectedCustomer.address || "-";
+
+            if (editingSoId) {
+              await updateDoc(doc(db, "sales_orders", editingSoId), {
+                customerName: selectedCustomer.customerName,
+                phone: selectedCustomer.phone || "-",
+                address: addr,
+                items: soItems,
+                total: grandTotal,
+                totalWeightInGrams: totalWeight,
+                shippingCost: shippingCost,
+                shippingCourier: courierCode,
+                shippingServiceName: serviceName,
+                shippingRatesSnapshot: shippingRates,
+                updatedAt: serverTimestamp(),
+                updatedBy: currentUser.name || currentUser.id,
+              });
+              showAlert(`Sales Order [${editingSoId}] berhasil diperbarui!`);
+            } else {
+              const counterRef = doc(db, "counters", "sales_order");
+              const newSoId = await runTransaction(db, async (tx) => {
+                const cSnap = await tx.get(counterRef);
+                const curr = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
+                const next = curr + 1;
+                const genSoId = `SO-${dateStr}-${String(next).padStart(5, "0")}`;
+
+                tx.set(counterRef, { currentNumber: next, updatedAt: serverTimestamp() }, { merge: true });
+                tx.set(doc(db, "sales_orders", genSoId), {
+                  soId: genSoId,
+                  date: displayDate,
+                  customerId: selectedCustomer.customerId || selectedCustomer.id || "",
+                  customerName: selectedCustomer.customerName,
+                  phone: selectedCustomer.phone || "-",
+                  address: addr,
+                  expedition: serviceName || "Kurir Toko",
+                  items: soItems,
+                  total: grandTotal,
+                  totalWeightInGrams: totalWeight,
+                  shippingCost: shippingCost,
+                  shippingCourier: courierCode,
+                  shippingServiceName: serviceName,
+                  shippingRatesSnapshot: shippingRates,
+                  status: "CONFIRMED",
+                  cancelReason: "",
+                  createdBy: currentUser.name || currentUser.id,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                });
+                return genSoId;
+              });
+              showAlert(`Sales Order [${newSoId}] berhasil dibuat!`);
+            }
+            setIsSoModalOpen(false);
+            loadAllData();
+          } catch (e: any) {
+            showAlert(e.message || "Gagal menyimpan Sales Order.");
+          } finally {
+            setLoading(false);
+          }
         }}
         showAlert={showAlert}
       />
@@ -3811,7 +4228,7 @@ export default function DashboardClient() {
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-rose-100 text-center">
             <h3 className="text-base font-bold text-rose-950 mb-1">Konfirmasi Keluar Akun</h3>
             <p className="text-xs text-rose-700 mb-6 leading-relaxed">
-              Apakah Anda yakin ingin keluar dari sesi <b>{currentUser.name}</b>?
+              Apakah Anda yakin ingin keluar dari sesi <b>{currentUser.name || currentUser.id}</b>?
             </p>
             <div className="flex gap-2">
               <button
@@ -3826,6 +4243,8 @@ export default function DashboardClient() {
                 onClick={() => {
                   setIsLogoutConfirmOpen(false);
                   document.cookie = "admin_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+                  localStorage.removeItem("wms_user_session");
+                  sessionStorage.removeItem("wms_visited_session");
                   router.push("/login");
                 }}
                 className="flex-1 py-2 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-bold rounded-xl shadow"
