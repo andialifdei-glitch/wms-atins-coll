@@ -4,14 +4,15 @@
   "/api/logout/route": "/api/logout",
   "/api/regions/route": "/api/regions",
   "/favicon.ico/route": "/favicon.ico",
+  "/.well-known/appspecific/com.chrome.devtools.json/route": "/.well-known/appspecific/com.chrome.devtools.json",
   "/api/login/route": "/api/login",
   "/api/admin/sanitize-passwords/route": "/api/admin/sanitize-passwords",
   "/api/portal/data/route": "/api/portal/data",
   "/api/admin/users/route": "/api/admin/users",
   "/api/shipping/cost/route": "/api/shipping/cost",
-  "/api/shipping/calculate/route": "/api/shipping/calculate",
   "/api/suppliers/route": "/api/suppliers",
   "/api/receiving/create/route": "/api/receiving/create",
+  "/api/shipping/calculate/route": "/api/shipping/calculate",
   "/login/page": "/login",
   "/page": "/"
 }

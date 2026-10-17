@@ -42,6 +42,12 @@
       "namedRegex": "^/_not\\-found(?:/)?$"
     },
     {
+      "page": "/.well-known/appspecific/com.chrome.devtools.json",
+      "regex": "^/\\.well\\-known/appspecific/com\\.chrome\\.devtools\\.json(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/\\.well\\-known/appspecific/com\\.chrome\\.devtools\\.json(?:/)?$"
+    },
+    {
       "page": "/api/admin/sanitize-passwords",
       "regex": "^/api/admin/sanitize\\-passwords(?:/)?$",
       "routeKeys": {},

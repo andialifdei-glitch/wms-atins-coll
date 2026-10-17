@@ -1,116 +1,95 @@
-﻿import { NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { verifyServerSession } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 const PROJECT_ID = "gen-lang-client-0158803339";
 const DATABASE_ID = "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f";
 
-function unwrapValue(v: any): any {
-  if (!v || typeof v !== "object") return v;
-  if ("stringValue" in v) return v.stringValue;
-  if ("integerValue" in v) return Number(v.integerValue);
-  if ("doubleValue" in v) return Number(v.doubleValue);
-  if ("booleanValue" in v) return v.booleanValue;
-  if ("timestampValue" in v) return v.timestampValue;
-  if ("nullValue" in v) return null;
-  if ("arrayValue" in v) return (v.arrayValue.values || []).map(unwrapValue);
-  if ("mapValue" in v) {
-    const obj: any = {};
-    for (const [mk, mv] of Object.entries(v.mapValue.fields || {})) {
-      obj[mk] = unwrapValue(mv);
-    }
-    return obj;
-  }
-  return v;
-}
-
-function parseDoc(doc: any) {
-  if (!doc) return null;
-  const id = doc.name ? doc.name.split("/").pop() : "";
-  const data: any = { id };
-  if (doc.fields) {
-    for (const [k, v] of Object.entries(doc.fields)) {
-      data[k] = unwrapValue(v);
-    }
-  }
-  return data;
-}
-
-async function fetchCollection(colName: string, limitCount = 500, key: string) {
-  // Coba fetch direct collection documents dahulu
-  const directUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/${colName}?pageSize=${limitCount}&key=${key}`;
-  try {
-    const resDirect = await fetch(directUrl, { method: "GET" });
-    if (resDirect.ok) {
-      const json = await resDirect.json();
-      if (Array.isArray(json.documents)) {
-        return json.documents.map(parseDoc).filter((d: any) => d !== null);
+async function fetchCollection(collectionName: string, apiKey: string, limitCount = 300) {
+  const queryUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${apiKey}`;
+  const res = await fetch(queryUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: collectionName }],
+        limit: limitCount,
+      },
+    }),
+    cache: "no-store",
+  });
+  if (!res.ok) return [];
+  const list: any[] = await res.json();
+  return list
+    .filter((d) => d.document && d.document.fields)
+    .map((d) => {
+      const fields = d.document.fields;
+      const parsed: any = { id: d.document.name.split("/").pop() };
+      for (const key of Object.keys(fields)) {
+        const val = fields[key];
+        if (val.stringValue !== undefined) parsed[key] = val.stringValue;
+        else if (val.integerValue !== undefined) parsed[key] = Number(val.integerValue);
+        else if (val.doubleValue !== undefined) parsed[key] = Number(val.doubleValue);
+        else if (val.booleanValue !== undefined) parsed[key] = val.booleanValue;
+        else if (val.timestampValue !== undefined) parsed[key] = val.timestampValue;
+        else if (val.arrayValue !== undefined) parsed[key] = val.arrayValue.values || [];
       }
-    }
-  } catch {}
-
-  // Fallback ke runQuery
-  const queryUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${key}`;
-  try {
-    const res = await fetch(queryUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        structuredQuery: {
-          from: [{ collectionId: colName }],
-          limit: limitCount,
-        },
-      }),
+      return parsed;
     });
-    if (!res.ok) return [];
-    const arr = await res.json();
-    if (!Array.isArray(arr)) return [];
-    return arr
-      .map((item: any) => parseDoc(item.document))
-      .filter((d: any) => d !== null);
-  } catch (err) {
-    console.error(`Gagal fetch ${colName}:`, err);
-    return [];
-  }
 }
 
-export async function GET() {
-  const key = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
+export async function GET(request: NextRequest) {
+  const user = await verifyServerSession(request);
+  if (!user) {
+    return NextResponse.json({ success: false, message: "Akses ditolak. Sesi tidak sah." }, { status: 401 });
+  }
+
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
+  const isRoot = user.role === "ROOT_ADMIN";
+
   try {
-    const [
-      products,
-      families,
-      customers,
-      salesOrders,
-      deliveryOrders,
-      purchaseOrders,
-      receivings,
-      stockOpnames,
-      stockAdjustments,
-      stockMovements,
-      settings,
-      users,
-      suppliers,
-    ] = await Promise.all([
-      fetchCollection("products", 500, key),
-      fetchCollection("families", 100, key),
-      fetchCollection("customers", 300, key),
-      fetchCollection("sales_orders", 200, key),
-      fetchCollection("delivery_orders", 200, key),
-      fetchCollection("purchase_orders", 100, key),
-      fetchCollection("receivings", 100, key),
-      fetchCollection("stock_opnames", 100, key),
-      fetchCollection("stock_adjustments", 100, key),
-      fetchCollection("stock_movements", 300, key),
-      fetchCollection("settings", 10, key),
-      fetchCollection("users", 100, key),
-      fetchCollection("suppliers", 200, key),
+    const [rawProducts, families, customers, salesOrders, deliveryOrders, purchaseOrders, receivings, stockOpnames, stockAdjustments, stockMovements] = await Promise.all([
+      fetchCollection("products", apiKey, 500),
+      fetchCollection("families", apiKey, 100),
+      fetchCollection("customers", apiKey, 300),
+      fetchCollection("sales_orders", apiKey, 200),
+      fetchCollection("delivery_orders", apiKey, 200),
+      fetchCollection("purchase_orders", apiKey, 100),
+      fetchCollection("receivings", apiKey, 100),
+      fetchCollection("stock_opnames", apiKey, 100),
+      fetchCollection("stock_adjustments", apiKey, 100),
+      fetchCollection("stock_movements", apiKey, 300),
     ]);
+
+    // Data Minimization: Sembunyikan HPP (purchasingPrice) dari non-ROOT_ADMIN
+    const sanitizedProducts = rawProducts.map((p: any) => {
+      if (!isRoot) {
+        const { purchasingPrice, ...safeProduct } = p;
+        return safeProduct;
+      }
+      return p;
+    });
+
+    let usersList: any[] = [];
+    let settingsList: any[] = [];
+    let suppliersList: any[] = [];
+
+    if (isRoot) {
+      [usersList, settingsList, suppliersList] = await Promise.all([
+        fetchCollection("users", apiKey, 100),
+        fetchCollection("settings", apiKey, 10),
+        fetchCollection("suppliers", apiKey, 200),
+      ]);
+    } else {
+      suppliersList = await fetchCollection("suppliers", apiKey, 200);
+      usersList = [{ id: user.id, uid: user.uid, fullName: user.name, role: user.role }];
+    }
 
     return NextResponse.json({
       success: true,
       data: {
-        products,
+        products: sanitizedProducts,
         families,
         customers,
         salesOrders,
@@ -120,15 +99,12 @@ export async function GET() {
         stockOpnames,
         stockAdjustments,
         stockMovements,
-        users,
-        suppliers: suppliers || [],
-        settings,
+        users: usersList,
+        settings: settingsList,
+        suppliers: suppliersList,
       },
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: err.message || "Failed to fetch portal data" },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ success: false, message: "Gagal memproses data portal." }, { status: 500 });
   }
 }

@@ -1,388 +1,484 @@
 ﻿"use client";
-import React, { useState, useMemo, useEffect } from "react";
+
+import React, { useState, useEffect, useMemo } from "react";
 import { formatRupiah } from "@/lib/formatters";
 
-interface CreatePurchaseOrderModalProps {
+interface Props {
   isOpen: boolean;
   products: any[];
-  suppliers?: any[];
+  suppliers: any[];
   onClose: () => void;
-  onSubmitPo: (payload: {
-    supplierId?: string;
-    supplier: string;
-    address: string;
-    phone: string;
-    notes: string;
-    items: any[];
-  }) => void;
+  onSubmitPo: (payload: any) => Promise<void>;
   showAlert: (msg: string, title?: string) => void;
 }
 
 export default function CreatePurchaseOrderModal({
   isOpen,
   products,
-  suppliers = [],
+  suppliers,
   onClose,
   onSubmitPo,
   showAlert,
-}: CreatePurchaseOrderModalProps) {
-  const [selectedSupplierId, setSelectedSupplierId] = useState("");
-  const [supplierName, setSupplierName] = useState("");
-  const [address, setAddress] = useState("");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
-  const [productSearch, setProductSearch] = useState("");
-  const [poItems, setPoItems] = useState<any[]>([]);
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+}: Props) {
+  // Supplier State (Dimulai kosong/clean)
+  const [selectedSupplier, setSelectedSupplier] = useState<any | null>(null);
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
 
-  // Reset state saat modal dibuka
+  // Product State
+  const [productSearch, setProductSearch] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [inputQty, setInputQty] = useState(1);
+  const [inputHpp, setInputHpp] = useState(0);
+
+  // Items PO & Notes
+  const [poItems, setPoItems] = useState<any[]>([]);
+  const [notes, setNotes] = useState("");
+
+  // Confirmation & Submit State
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Reset form setiap kali modal dibuka
   useEffect(() => {
     if (isOpen) {
-      setSelectedSupplierId("");
-      setSupplierName("");
-      setAddress("");
-      setPhone("");
-      setNotes("");
+      setSelectedSupplier(null);
+      setSupplierSearch("");
+      setShowSupplierDropdown(false);
       setProductSearch("");
+      setSelectedProduct(null);
+      setShowProductDropdown(false);
+      setInputQty(1);
+      setInputHpp(0);
       setPoItems([]);
-      setIsConfirmOpen(false);
+      setNotes("");
+      setShowConfirmDialog(false);
+      setSubmitting(false);
     }
   }, [isOpen]);
 
-  // Handler saat dropdown supplier berubah
-  const handleSupplierChange = (suppId: string) => {
-    if (poItems.length > 0 && suppId !== selectedSupplierId) {
-      const confirmReset = window.confirm(
-        "Mengganti supplier akan mengosongkan item barang yang sudah dipilih. Lanjutkan?"
+  // Filter daftar supplier berdasarkan ketikan di searchbar
+  const filteredSuppliers = useMemo(() => {
+    if (!supplierSearch.trim()) return suppliers.filter((s) => s.active !== false);
+    const q = supplierSearch.toLowerCase();
+    return suppliers.filter(
+      (s) =>
+        s.active !== false &&
+        ((s.supplierName || "").toLowerCase().includes(q) ||
+          (s.supplierId || "").toLowerCase().includes(q) ||
+          (s.phone || "").toLowerCase().includes(q))
+    );
+  }, [suppliers, supplierSearch]);
+
+  // Filter produk: HANYA produk aktif yang terdaftar di bawah supplier terpilih
+  const filteredProducts = useMemo(() => {
+    if (!selectedSupplier) return [];
+
+    const suppId = String(selectedSupplier.supplierId || selectedSupplier.id || "").toLowerCase();
+    const suppName = String(selectedSupplier.supplierName || "").toLowerCase();
+
+    return products.filter((p) => {
+      if (p.active === false) return false;
+
+      const pSuppId = String(p.supplierId || "").toLowerCase();
+      const pSuppName = String(p.supplierName || "").toLowerCase();
+
+      const matchesSupplier =
+        (suppId && pSuppId === suppId) ||
+        (suppName && pSuppName === suppName);
+
+      if (!matchesSupplier) return false;
+
+      if (!productSearch.trim()) return true;
+      const q = productSearch.toLowerCase();
+      return (
+        (p.sku || "").toLowerCase().includes(q) ||
+        (p.itemName || "").toLowerCase().includes(q)
       );
-      if (!confirmReset) return;
+    });
+  }, [products, selectedSupplier, productSearch]);
+
+  const grandTotal = useMemo(() => {
+    return poItems.reduce((acc, it) => acc + Number(it.subtotal || 0), 0);
+  }, [poItems]);
+
+  function handleSelectSupplier(s: any) {
+    if (selectedSupplier && (selectedSupplier.supplierId || selectedSupplier.id) !== (s.supplierId || s.id)) {
+      if (poItems.length > 0) {
+        if (!confirm("Mengganti supplier akan mengosongkan item produk yang telah dipilih. Lanjutkan?")) {
+          setShowSupplierDropdown(false);
+          return;
+        }
+      }
       setPoItems([]);
     }
-
-    setSelectedSupplierId(suppId);
-    const target = suppliers.find(
-      (s) => (s.supplierId || s.documentNo || s.id) === suppId
-    );
-    if (target) {
-      setSupplierName(target.supplierName || "");
-      setPhone(target.phone || "-");
-      setAddress(target.address || "-");
-    } else {
-      setSupplierName("");
-      setPhone("");
-      setAddress("");
-    }
+    setSelectedSupplier(s);
+    setSupplierSearch(s.supplierName || "");
+    setShowSupplierDropdown(false);
+    setSelectedProduct(null);
     setProductSearch("");
-  };
+  }
 
-  // Filter produk: HANYA yang aktif dan memiliki supplierId yang sama dengan supplier terpilih
-  const availableProductsForSupplier = useMemo(() => {
-    if (!selectedSupplierId) return [];
-    return products.filter(
-      (p) =>
-        p.active !== false &&
-        (p.supplierId === selectedSupplierId ||
-          p.supplierName === supplierName)
-    );
-  }, [products, selectedSupplierId, supplierName]);
+  function handleResetSupplier() {
+    if (poItems.length > 0) {
+      if (!confirm("Menghapus pilihan supplier akan mengosongkan daftar item pesanan. Lanjutkan?")) return;
+    }
+    setSelectedSupplier(null);
+    setSupplierSearch("");
+    setSelectedProduct(null);
+    setProductSearch("");
+    setPoItems([]);
+  }
 
-  const filteredProducts = useMemo(() => {
-    if (!productSearch.trim()) return [];
-    const q = productSearch.toLowerCase();
-    return availableProductsForSupplier
-      .filter(
-        (p) =>
-          (p.sku || "").toLowerCase().includes(q) ||
-          (p.itemName || "").toLowerCase().includes(q)
-      )
-      .slice(0, 8);
-  }, [availableProductsForSupplier, productSearch]);
+  function handleSelectProduct(prod: any) {
+    setSelectedProduct(prod);
+    setProductSearch(prod.itemName);
+    setInputHpp(Number(prod.purchasingPrice || 0));
+    setShowProductDropdown(false);
+  }
+
+  function handleAddItem() {
+    if (!selectedSupplier) return showAlert("Pilih supplier terlebih dahulu!");
+    if (!selectedProduct) return showAlert("Pilih produk terlebih dahulu!");
+    if (inputQty <= 0) return showAlert("Kuantitas minimal 1 pcs!");
+
+    const hpp = Number(inputHpp) || 0;
+    const existIndex = poItems.findIndex((it) => it.sku === selectedProduct.sku);
+
+    if (existIndex >= 0) {
+      const updated = [...poItems];
+      const newQty = updated[existIndex].qty + inputQty;
+      updated[existIndex].qty = newQty;
+      updated[existIndex].purchasingPrice = hpp;
+      updated[existIndex].subtotal = newQty * hpp;
+      setPoItems(updated);
+    } else {
+      setPoItems([
+        ...poItems,
+        {
+          sku: selectedProduct.sku,
+          itemName: selectedProduct.itemName,
+          purchasingPrice: hpp,
+          qty: inputQty,
+          subtotal: inputQty * hpp,
+        },
+      ]);
+    }
+
+    setSelectedProduct(null);
+    setProductSearch("");
+    setInputQty(1);
+    setInputHpp(0);
+  }
+
+  function handleRemoveItem(idx: number) {
+    setPoItems(poItems.filter((_, i) => i !== idx));
+  }
+
+  function handleOpenConfirm(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedSupplier) return showAlert("Pilih supplier terlebih dahulu!");
+    if (poItems.length === 0) return showAlert("Tambahkan minimal 1 item pesanan produk!");
+    setShowConfirmDialog(true);
+  }
+
+  async function handleFinalSubmit() {
+    setSubmitting(true);
+    try {
+      await onSubmitPo({
+        supplierId: selectedSupplier?.supplierId || selectedSupplier?.id || "",
+        supplier: selectedSupplier?.supplierName || "-",
+        supplierPhone: selectedSupplier?.phone || "-",
+        supplierAddress: selectedSupplier?.address || "-",
+        items: poItems,
+        total: grandTotal,
+        notes: notes.trim(),
+      });
+      setShowConfirmDialog(false);
+      onClose();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal membuat Purchase Order!");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   if (!isOpen) return null;
 
-  const totalNilai = poItems.reduce((acc, it) => acc + (it.subtotal || 0), 0);
-
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-        <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl border border-rose-100 max-h-[90vh] overflow-y-auto">
-          <div className="border-b border-rose-100 pb-2 mb-4">
-            <h3 className="text-base font-bold text-rose-950">Buat Purchase Order (PO) Baru</h3>
-            <p className="text-xs text-rose-500 font-mono">Format Dokumen: PO-YYYYMMDD-XXXXX</p>
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[85] animate-fadeIn">
+        <div className="bg-white rounded-xl w-full max-w-4xl p-6 shadow-xl border border-slate-200 max-h-[92vh] overflow-y-auto text-xs">
+          <div className="flex justify-between items-start border-b border-slate-100 pb-3 mb-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Buat Purchase Order (PO) Baru</h3>
+              <p className="text-[11px] text-slate-500">Pemesanan barang ke supplier rekanan resmi</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 text-lg font-bold leading-none"
+            >
+              &times;
+            </button>
           </div>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!selectedSupplierId) return showAlert("Silakan pilih Supplier Rekanan terlebih dahulu!");
-              if (poItems.length === 0) return showAlert("Tambahkan minimal 1 item barang ke dalam PO!");
-              setIsConfirmOpen(true);
-            }}
-            className="space-y-4 text-xs"
-          >
-            {/* Bagian Pemilihan Supplier */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-rose-50/50 p-3.5 rounded-xl border border-rose-100">
-              <div className="md:col-span-2">
-                <label className="block font-bold text-rose-950 mb-1">
-                  Pilih Supplier Rekanan *
-                </label>
-                <select
-                  required
-                  value={selectedSupplierId}
-                  onChange={(e) => handleSupplierChange(e.target.value)}
-                  className="w-full p-2.5 border border-rose-200 rounded-lg bg-white outline-none font-semibold text-rose-950"
-                >
-                  <option value="">-- Pilih Supplier Rekanan --</option>
-                  {suppliers
-                    .filter((s) => s.active !== false)
-                    .map((s) => (
-                      <option
-                        key={s.supplierId || s.id}
-                        value={s.supplierId || s.id}
+          <form onSubmit={handleOpenConfirm} className="space-y-4">
+            {/* 1. SEARCHBAR SUPPLIER (CLEAN & INTERAKTIF) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <div className="relative">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="font-semibold text-slate-700">Pilih Supplier Rekanan *</label>
+                  {selectedSupplier && (
+                    <button
+                      type="button"
+                      onClick={handleResetSupplier}
+                      className="text-[10px] text-rose-600 hover:underline font-semibold"
+                    >
+                      Ganti Supplier
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Ketik nama atau kode supplier..."
+                  value={supplierSearch}
+                  onFocus={() => setShowSupplierDropdown(true)}
+                  onChange={(e) => {
+                    setSupplierSearch(e.target.value);
+                    setShowSupplierDropdown(true);
+                  }}
+                  className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-white font-medium"
+                />
+                {showSupplierDropdown && (
+                  <div className="absolute left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg z-30">
+                    {filteredSuppliers.map((s) => (
+                      <div
+                        key={s.id || s.supplierId}
+                        onClick={() => handleSelectSupplier(s)}
+                        className="p-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-b-0"
                       >
-                        [{s.supplierId || s.documentNo}] {s.supplierName}
-                      </option>
+                        <div className="font-semibold text-slate-900">{s.supplierName}</div>
+                        <div className="text-[10px] text-slate-500">{s.supplierId || s.id} • {s.phone || "-"}</div>
+                      </div>
                     ))}
-                </select>
-                {suppliers.length === 0 && (
-                  <p className="text-[11px] text-amber-700 mt-1">
-                    Belum ada data supplier rekanan di database. Tambahkan di menu User Management -&gt; Supplier.
-                  </p>
+                    {filteredSuppliers.length === 0 && (
+                      <div className="p-2.5 text-center text-slate-400">Supplier tidak ditemukan</div>
+                    )}
+                  </div>
                 )}
               </div>
 
-              <div>
-                <label className="block font-semibold text-rose-900 mb-1">No. Handphone / WhatsApp</label>
-                <div className="w-full p-2 border border-slate-200 rounded-lg bg-slate-100 font-mono text-slate-700 select-none">
-                  {phone || <span className="text-slate-400 italic">Otomatis dari data supplier</span>}
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-col justify-center">
+                <div className="font-semibold text-slate-900">
+                  {selectedSupplier ? selectedSupplier.supplierName : "Belum memilih supplier"}
                 </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-rose-900 mb-1">Alamat Supplier</label>
-                <div className="w-full p-2 border border-slate-200 rounded-lg bg-slate-100 text-slate-700 select-none min-h-[38px] break-words">
-                  {address || <span className="text-slate-400 italic">Otomatis dari data supplier</span>}
+                <div className="text-slate-500 text-[11px] truncate mt-0.5">
+                  {selectedSupplier
+                    ? `${selectedSupplier.phone || "-"} • ${selectedSupplier.address || "Alamat belum diatur"}`
+                    : "Pilih supplier terlebih dahulu untuk menampilkan katalog produk"}
                 </div>
               </div>
             </div>
 
-            <div>
-              <label className="block font-semibold text-rose-900 mb-1">Catatan Tambahan PO</label>
-              <input
-                type="text"
-                placeholder="misal: Estimasi tiba 3 hari kerja, kirim ke Gudang Utama"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full p-2 border border-rose-200 rounded-lg outline-none"
-              />
-            </div>
+            {/* 2. PILIH PRODUK SESUAI SUPPLIER */}
+            <div className="p-3.5 bg-white rounded-lg border border-slate-200 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-slate-800 text-xs">Pilih Produk &amp; Harga Beli (HPP)</span>
+                {selectedSupplier && (
+                  <span className="text-[11px] text-slate-500">
+                    Tersedia: <b>{filteredProducts.length}</b> SKU terdaftar pada {selectedSupplier.supplierName}
+                  </span>
+                )}
+              </div>
 
-            {/* Bagian Pencarian Barang Terikat Supplier */}
-            <div className="border-t border-rose-100 pt-3">
-              <label className="block font-semibold text-rose-900 mb-1">
-                Cari & Tambah SKU Barang (Hanya Katalog Supplier Terpilih)
-              </label>
-
-              {!selectedSupplierId ? (
-                <div className="p-3 bg-amber-50 text-amber-800 rounded-lg border border-amber-200 text-center font-medium">
-                  ⚠️ Silakan pilih <b>Supplier Rekanan</b> di atas terlebih dahulu untuk menampilkan daftar SKU terkait.
-                </div>
-              ) : (
-                <>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+                <div className="relative md:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Cari Produk {selectedSupplier ? `(${selectedSupplier.supplierName})` : ""}
+                  </label>
                   <input
                     type="text"
-                    placeholder={`Ketik nama atau SKU milik ${supplierName}...`}
+                    disabled={!selectedSupplier}
+                    placeholder={
+                      selectedSupplier
+                        ? "Ketik SKU atau nama produk..."
+                        : "Pilih supplier terlebih dahulu..."
+                    }
                     value={productSearch}
-                    onChange={(e) => setProductSearch(e.target.value)}
-                    className="w-full p-2 border border-rose-200 rounded-lg outline-none"
+                    onFocus={() => {
+                      if (selectedSupplier) setShowProductDropdown(true);
+                    }}
+                    onChange={(e) => {
+                      setProductSearch(e.target.value);
+                      if (selectedSupplier) setShowProductDropdown(true);
+                    }}
+                    className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-white font-medium disabled:bg-slate-100 disabled:cursor-not-allowed"
                   />
-
-                  {productSearch.trim() && (
-                    <div className="mt-1 max-h-44 overflow-y-auto border border-rose-200 rounded-lg bg-white shadow-lg divide-y divide-rose-50">
+                  {showProductDropdown && selectedSupplier && (
+                    <div className="absolute left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg z-20">
                       {filteredProducts.map((p) => (
                         <div
-                          key={p.sku}
-                          onClick={() => {
-                            const existingIdx = poItems.findIndex((it) => it.sku === p.sku);
-                            if (existingIdx > -1) {
-                              setPoItems((prev) =>
-                                prev.map((item, idx) =>
-                                  idx === existingIdx
-                                    ? {
-                                        ...item,
-                                        quantity: item.quantity + 1,
-                                        subtotal: (item.quantity + 1) * item.purchasingPrice,
-                                      }
-                                    : item
-                                )
-                              );
-                            } else {
-                              setPoItems((prev) => [
-                                ...prev,
-                                {
-                                  sku: p.sku,
-                                  itemName: p.itemName,
-                                  purchasingPrice: Number(p.purchasingPrice) || 0,
-                                  quantity: 1,
-                                  subtotal: Number(p.purchasingPrice) || 0,
-                                },
-                              ]);
-                            }
-                            setProductSearch("");
-                          }}
-                          className="p-2 hover:bg-rose-50 cursor-pointer flex justify-between items-center transition"
+                          key={p.id}
+                          onClick={() => handleSelectProduct(p)}
+                          className="p-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-b-0"
                         >
-                          <div>
-                            <span className="font-bold font-mono text-rose-950">{p.sku}</span>
-                            <span className="text-slate-600 ml-2">{p.itemName}</span>
-                          </div>
-                          <div className="font-bold text-[#BE185D]">
-                            {formatRupiah(Number(p.purchasingPrice) || 0)}
+                          <div className="font-semibold text-slate-900">{p.sku} - {p.itemName}</div>
+                          <div className="text-[10px] text-slate-500">
+                            Stok Saat Ini: {p.stock} pcs • HPP Bawaan: {formatRupiah(p.purchasingPrice)}
                           </div>
                         </div>
                       ))}
                       {filteredProducts.length === 0 && (
-                        <div className="p-3 text-center text-slate-400">
-                          Tidak ditemukan SKU aktif yang terdaftar di bawah supplier {supplierName}.
+                        <div className="p-2.5 text-center text-slate-400">
+                          Tidak ada produk yang terdaftar untuk supplier ini
                         </div>
                       )}
                     </div>
                   )}
+                </div>
 
-                  <div className="text-[11px] text-slate-500 mt-1">
-                    Tersedia {availableProductsForSupplier.length} SKU katalog terdaftar untuk supplier ini.
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Harga Beli / HPP (Rp)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    disabled={!selectedProduct}
+                    value={inputHpp}
+                    onChange={(e) => setInputHpp(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full p-2 border border-slate-200 rounded-lg outline-none font-bold text-slate-900 font-mono disabled:bg-slate-100"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="w-20">
+                    <label className="block font-semibold text-slate-700 mb-1">Qty</label>
+                    <input
+                      type="number"
+                      min="1"
+                      disabled={!selectedProduct}
+                      value={inputQty}
+                      onChange={(e) => setInputQty(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full p-2 border border-slate-200 rounded-lg outline-none text-center font-bold disabled:bg-slate-100"
+                    />
                   </div>
-                </>
-              )}
+                  <button
+                    type="button"
+                    disabled={!selectedProduct}
+                    onClick={handleAddItem}
+                    className="flex-1 py-2 bg-[#9F1239] hover:bg-[#881337] disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-xs transition"
+                  >
+                    + Tambah
+                  </button>
+                </div>
+              </div>
+
+              {/* TABEL ITEM PO */}
+              <table className="w-full text-left border border-slate-200 rounded-lg overflow-hidden">
+                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                  <tr>
+                    <th className="p-2">SKU</th>
+                    <th className="p-2">Nama Barang</th>
+                    <th className="p-2 text-right">Harga Beli / HPP</th>
+                    <th className="p-2 text-center">Qty Pesan</th>
+                    <th className="p-2 text-right">Subtotal</th>
+                    <th className="p-2 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {poItems.map((it, idx) => (
+                    <tr key={idx}>
+                      <td className="p-2 font-mono font-bold text-slate-900">{it.sku}</td>
+                      <td className="p-2 font-medium">{it.itemName}</td>
+                      <td className="p-2 text-right">{formatRupiah(it.purchasingPrice)}</td>
+                      <td className="p-2 text-center font-bold">{it.qty}</td>
+                      <td className="p-2 text-right font-bold text-emerald-700">{formatRupiah(it.subtotal)}</td>
+                      <td className="p-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(idx)}
+                          className="text-rose-600 hover:text-rose-800 font-bold px-2"
+                        >
+                          &times;
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {poItems.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="p-4 text-center text-slate-400">
+                        Belum ada item barang yang dimasukkan.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            {/* Tabel Item PO */}
-            <div>
-              <label className="block font-semibold text-rose-900 mb-1">Daftar Barang Masuk PO</label>
-              <div className="border border-rose-200 rounded-lg overflow-hidden">
-                {poItems.length === 0 ? (
-                  <div className="p-4 text-center text-slate-400">Belum ada barang dimasukkan ke PO.</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead className="bg-rose-50 text-rose-900 font-bold border-b border-rose-100">
-                        <tr>
-                          <th className="p-2">SKU & Barang</th>
-                          <th className="p-2 w-28 text-center">Qty Pesan</th>
-                          <th className="p-2 text-right">Harga HPP</th>
-                          <th className="p-2 text-right">Subtotal</th>
-                          <th className="p-2 w-10 text-center"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-rose-50">
-                        {poItems.map((it, idx) => (
-                          <tr key={it.sku}>
-                            <td className="p-2">
-                              <div className="font-mono font-bold text-rose-900">{it.sku}</div>
-                              <div className="text-[11px] text-slate-600">{it.itemName}</div>
-                            </td>
-                            <td className="p-2 text-center">
-                              <input
-                                type="number"
-                                min="1"
-                                value={it.quantity}
-                                onChange={(e) => {
-                                  const q = Math.max(1, parseInt(e.target.value) || 1);
-                                  setPoItems((prev) =>
-                                    prev.map((item, i) =>
-                                      i === idx
-                                        ? { ...item, quantity: q, subtotal: q * item.purchasingPrice }
-                                        : item
-                                    )
-                                  );
-                                }}
-                                className="w-16 p-1 border border-rose-200 rounded text-center font-bold outline-none"
-                              />
-                            </td>
-                            <td className="p-2 text-right font-mono text-slate-700">
-                              {formatRupiah(it.purchasingPrice)}
-                            </td>
-                            <td className="p-2 text-right font-bold text-rose-950">
-                              {formatRupiah(it.subtotal)}
-                            </td>
-                            <td className="p-2 text-center">
-                              <button
-                                type="button"
-                                onClick={() => setPoItems(poItems.filter((_, i) => i !== idx))}
-                                className="text-red-500 hover:text-red-700 font-bold text-base"
-                              >
-                                &times;
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+            {/* 3. CATATAN & TOTAL NILAI */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Catatan Tambahan (Opsional)</label>
+                <textarea
+                  rows={2}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Instruksi pengiriman atau catatan faktur..."
+                  className="w-full p-2 border border-slate-200 rounded-lg outline-none bg-white"
+                />
+              </div>
+
+              <div className="flex flex-col items-end justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                <span className="text-slate-600">Total Nilai Pemesanan:</span>
+                <span className="text-base font-bold text-emerald-700 mt-1">{formatRupiah(grandTotal)}</span>
               </div>
             </div>
 
-            {/* Total Nilai PO */}
-            <div className="flex justify-between items-center bg-rose-50 p-3 rounded-lg border border-rose-100">
-              <span className="font-semibold text-rose-900">Total Nilai PO:</span>
-              <b className="text-emerald-700 text-sm">{formatRupiah(totalNilai)}</b>
-            </div>
-
-            {/* Tombol Aksi */}
-            <div className="flex justify-end gap-2 pt-2 border-t border-rose-100">
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold border border-slate-200"
               >
                 Batal
               </button>
               <button
                 type="submit"
-                disabled={poItems.length === 0}
-                className="px-5 py-2 bg-[#BE185D] hover:bg-[#9D174D] disabled:bg-slate-300 text-white rounded-lg font-bold shadow"
+                disabled={!selectedSupplier || poItems.length === 0}
+                className="px-5 py-2 bg-[#9F1239] hover:bg-[#881337] disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-xs transition"
               >
-                Terbitkan PO
+                Terbitkan Purchase Order
               </button>
             </div>
           </form>
         </div>
       </div>
 
-      {/* Alert Konfirmasi Penerbitan PO */}
-      {isConfirmOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-60 animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-rose-200 text-center">
-            <h3 className="text-base font-bold text-rose-950 mb-2">Konfirmasi Penerbitan PO</h3>
-            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-              Apakah rincian pesanan Purchase Order ke supplier <b>{supplierName}</b> ([{selectedSupplierId}]) sejumlah{" "}
-              <b>{poItems.length} macam barang</b> dengan total <b>{formatRupiah(totalNilai)}</b> sudah sesuai?
+      {/* DIALOG KONFIRMASI PEMBUATAN PO (Z-[100000] SELALU DI LAPISAN PALING DEPAN) */}
+      {showConfirmDialog && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 z-[100000] animate-fadeIn">
+          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-2xl border border-slate-200 text-center text-xs">
+            <h3 className="text-sm font-bold text-slate-900 mb-1.5">Konfirmasi Pembuatan PO</h3>
+            <p className="text-slate-600 mb-4 leading-relaxed">
+              Terbitkan Purchase Order ke supplier <b>{selectedSupplier?.supplierName}</b> dengan total nilai <b>{formatRupiah(grandTotal)}</b> ({poItems.length} SKU)?
             </p>
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setIsConfirmOpen(false)}
-                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
+                disabled={submitting}
+                onClick={() => setShowConfirmDialog(false)}
+                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg border border-slate-200"
               >
-                Periksa Ulang
+                Batal
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setIsConfirmOpen(false);
-                  onSubmitPo({
-                    supplierId: selectedSupplierId,
-                    supplier: supplierName,
-                    address,
-                    phone,
-                    notes,
-                    items: poItems,
-                  });
-                }}
-                className="flex-1 py-2 bg-[#BE185D] hover:bg-[#9D174D] text-white text-xs font-bold rounded-xl shadow"
+                disabled={submitting}
+                onClick={handleFinalSubmit}
+                className="flex-1 py-2 bg-[#9F1239] hover:bg-[#881337] disabled:bg-slate-400 text-white font-semibold rounded-lg shadow-xs transition"
               >
-                Konfirmasi Terbitkan
+                {submitting ? "Menerbitkan..." : "Ya, Terbitkan PO"}
               </button>
             </div>
           </div>
