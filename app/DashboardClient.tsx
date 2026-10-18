@@ -167,7 +167,7 @@ export default function DashboardClient() {
   const [invSubTab, setInvSubTab] = useState<string>("products");
   const [poSubTab, setPoSubTab] = useState<string>("po_list");
   const [reportSubTab, setReportSubTab] = useState<"so" | "do" | "sales_item_day" | "sales_summary_day" | "customer" | "stock">("so");
-  const [humanSubTab, setHumanSubTab] = useState<"staff" | "suppliers" | "customers">("staff");
+  const [humanSubTab, setHumanSubTab] = useState<"staff" | "suppliers" | "customers" | "families">("staff");
 
   // Master Data State
   const [products, setProducts] = useState<any[]>([]);
@@ -280,6 +280,15 @@ export default function DashboardClient() {
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
 
   // Modals & Forms
+    // Family CRUD State
+  const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false);
+  const [familyModalMode, setFamilyModalMode] = useState<"create" | "edit">("create");
+  const [familyForm, setFamilyForm] = useState({ familyCode: "", familyName: "" });
+
+  // Audit Primary Key State
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [auditReport, setAuditReport] = useState<any[]>([]);
+  const [isAuditing, setIsAuditing] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isEditingProduct, setIsEditingProduct] = useState(false);
   const [productFormData, setProductFormData] = useState<any>({
@@ -372,7 +381,171 @@ export default function DashboardClient() {
     setAlertModal({ isOpen: true, title, message });
   };
 
-    async function handleSavePurchaseOrder(payload: any) {
+      // Handler Eksekusi Stock Adjustment ke Firestore
+  async function handleExecuteStockAdjustment(payload: any) {
+    try {
+      setLoading(true);
+      const today = new Date();
+      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
+      const displayDate = today.toISOString().split("T")[0];
+
+      const sku = String(payload.sku || payload.itemCode || payload.selectedSku || "").trim();
+      const adjType = String(payload.adjustmentType || payload.type || "INCREASE").toUpperCase();
+      const qty = Math.abs(Number(payload.adjustmentQty ?? payload.qty ?? 0));
+      const reason = String(payload.reason || "-").trim();
+
+      if (!sku || qty <= 0) {
+        throw new Error("SKU dan kuantitas penyesuaian harus valid!");
+      }
+
+      const counterRef = doc(db, "counters", "stock_adjustment");
+      const prodRef = doc(db, "products", sku);
+
+      const generatedAdjId = await runTransaction(db, async (tx) => {
+        // --- FASE 1: READ SEMUA DOKUMEN ---
+        const [cSnap, pSnap] = await Promise.all([
+          tx.get(counterRef),
+          tx.get(prodRef),
+        ]);
+
+        if (!pSnap.exists()) {
+          throw new Error(`Produk dengan SKU [${sku}] tidak ditemukan!`);
+        }
+
+        const pData = pSnap.data();
+        const currentStock = Number(pData.stock || 0);
+        let newStock = currentStock;
+
+        if (adjType === "INCREASE") {
+          newStock = currentStock + qty;
+        } else if (adjType === "DECREASE") {
+          if (currentStock < qty) {
+            throw new Error(`Stok saat ini (${currentStock} pcs) tidak mencukupi untuk pengurangan ${qty} pcs!`);
+          }
+          newStock = currentStock - qty;
+        }
+
+        const currCounter = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
+        const nextCounter = currCounter + 1;
+        const adjDocId = `ADJ-${dateStr}-${String(nextCounter).padStart(5, "0")}`;
+
+        // --- FASE 2: WRITE SEMUA DOKUMEN ---
+        tx.set(counterRef, { currentNumber: nextCounter, updatedAt: serverTimestamp() }, { merge: true });
+
+        tx.update(prodRef, {
+          stock: newStock,
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.name || currentUser.id,
+        });
+
+        const adjDocRef = doc(db, "stock_adjustments", adjDocId);
+        tx.set(adjDocRef, {
+          adjustmentId: adjDocId,
+          documentNo: adjDocId,
+          date: displayDate,
+          sku: sku,
+          itemName: pData.itemName || payload.itemName || "-",
+          adjustmentType: adjType,
+          adjustmentQty: qty,
+          currentStock: currentStock,
+          newStock: newStock,
+          reason: reason,
+          user: currentUser.name || currentUser.id,
+          createdAt: serverTimestamp(),
+        });
+
+        const mvRef = doc(collection(db, "stock_movements"));
+        tx.set(mvRef, {
+          movementId: mvRef.id,
+          date: displayDate,
+          itemCode: sku,
+          itemNameSnapshot: pData.itemName || payload.itemName || "-",
+          type: "ADJUSTMENT",
+          referenceId: adjDocId,
+          qtyIn: adjType === "INCREASE" ? qty : 0,
+          qtyOut: adjType === "DECREASE" ? qty : 0,
+          previousStock: currentStock,
+          newStock: newStock,
+          reason: `Stock Adjustment (${adjDocId}): ${reason}`,
+          user: currentUser.name || currentUser.id,
+          timestamp: serverTimestamp(),
+        });
+
+        return adjDocId;
+      });
+
+      showAlert(`Stock Adjustment [${generatedAdjId}] berhasil diproses dan saldo fisik telah diperbarui.`);
+      setIsAdjModalOpen(false);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal memproses Stock Adjustment.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Handler Inisialisasi Stock Opname Baru ke Firestore
+  async function handleConfirmInitStockOpname(payload: any) {
+    try {
+      setLoading(true);
+      const today = new Date();
+      const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
+      const displayDate = today.toISOString().split("T")[0];
+
+      const counterRef = doc(db, "counters", "stock_opname");
+
+      const generatedSopId = await runTransaction(db, async (tx) => {
+        const cSnap = await tx.get(counterRef);
+        const currCounter = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
+        const nextCounter = currCounter + 1;
+        const sopDocId = `SOP-${dateStr}-${String(nextCounter).padStart(5, "0")}`;
+
+        // Persiapkan daftar item snapshot stok sistem terkini
+        let targetProducts = products.filter((p) => p.active !== false);
+        if (payload?.familyCode && payload.familyCode !== "ALL") {
+          targetProducts = targetProducts.filter((p) => p.familyCode === payload.familyCode);
+        }
+
+        const sopItems = targetProducts.map((p) => ({
+          sku: p.sku,
+          skuCode: p.sku,
+          skuId: p.sku,
+          itemName: p.itemName,
+          systemQtySnapshot: Number(p.stock || 0),
+          physicalQty: Number(p.stock || 0), // Inisialisasi awal sama dengan sistem
+          countedBy: currentUser.name || currentUser.id || "Auditor",
+        }));
+
+        tx.set(counterRef, { currentNumber: nextCounter, updatedAt: serverTimestamp() }, { merge: true });
+
+        const sopDocRef = doc(db, "stock_opnames", sopDocId);
+        tx.set(sopDocRef, {
+          sopId: sopDocId,
+          documentNo: sopDocId,
+          opnameDate: displayDate,
+          totalSku: sopItems.length,
+          items: sopItems,
+          status: "COUNTING_COMPLETED", // Siap untuk tahap review dan penyesuaian fisik
+          familyCode: payload?.familyCode || "ALL",
+          initiatedBy: currentUser.name || currentUser.id,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        return sopDocId;
+      });
+
+      showAlert(`Inisialisasi Stock Opname [${generatedSopId}] berhasil dibuat. Dokumen siap direview.`);
+      setIsInitSopModalOpen(false);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal membuat inisialisasi Stock Opname.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSavePurchaseOrder(payload: any) {
     try {
       setLoading(true);
       const today = new Date();
@@ -425,6 +598,377 @@ export default function DashboardClient() {
     } finally {
       setLoading(false);
     }
+  }
+
+    // --- FUNGSI CRUD FAMILY PRODUK (FAM-xxx) ---
+    // --- FUNGSI CRUD STAF GUDANG ---
+  function getNextStaffId() {
+    let maxNum = 0;
+    usersList.forEach((u) => {
+      const sid = String(u.staffId || u.id || "").trim();
+      const match = sid.match(/ST-(\d+)/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+    return `ST-${String(maxNum + 1).padStart(2, "0")}`;
+  }
+
+  function handleOpenCreateStaff() {
+    const nextId = getNextStaffId();
+    setStaffForm({
+      staffId: nextId,
+      fullName: "",
+      userId: "",
+      password: "",
+      role: "STAFF_GUDANG",
+    } as any);
+    setStaffModalMode("create");
+    setIsStaffModalOpen(true);
+  }
+
+  function handleOpenEditStaff(u: any) {
+    setStaffForm({
+      staffId: u.staffId || u.id,
+      fullName: u.fullName || u.name || "",
+      userId: u.userId || u.username || u.id,
+      password: "", // Kosongkan password saat edit jika tidak ingin diubah
+      role: u.role || "STAFF_GUDANG",
+    } as any);
+    setStaffModalMode("edit");
+    setIsStaffModalOpen(true);
+  }
+
+  function handleCloseStaffModal() {
+    setStaffForm({
+      staffId: "",
+      fullName: "",
+      userId: "",
+      password: "",
+      role: "STAFF_GUDANG",
+    } as any);
+    setIsStaffModalOpen(false);
+  }
+
+  async function handleSaveStaff(e: React.FormEvent) {
+    e.preventDefault();
+    const sId = staffForm.staffId.trim();
+    const uId = staffForm.userId.trim().toLowerCase();
+    const fName = staffForm.fullName.trim();
+    const sRole = (staffForm as any).role || "STAFF_GUDANG";
+    const pass = staffForm.password.trim();
+
+    if (!uId || !fName) {
+      return showAlert("User ID dan Nama Lengkap staf wajib diisi!");
+    }
+
+    if (staffModalMode === "create" && !pass) {
+      return showAlert("Password wajib diisi untuk pembuatan akun staf baru!");
+    }
+
+    try {
+      setLoading(true);
+      const userRef = doc(db, "users", uId);
+
+      if (staffModalMode === "create") {
+        const existing = usersList.find((u) => (u.userId || u.id || "").toLowerCase() === uId);
+        if (existing) {
+          return showAlert(`User ID [${uId}] sudah terdaftar! Gunakan User ID lain.`);
+        }
+
+        // 1. Daftarkan akun di Firebase Auth REST API
+        const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
+        const staffEmail = `${uId}@atins-collection.local`;
+
+        try {
+          await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: staffEmail,
+              password: pass,
+              returnSecureToken: false,
+            }),
+          });
+        } catch {}
+
+        // 2. Simpan ke Firestore koleksi users
+        await setDoc(userRef, {
+          id: uId,
+          userId: uId,
+          staffId: sId,
+          fullName: fName,
+          name: fName,
+          role: sRole,
+          createdAt: serverTimestamp(),
+          createdBy: currentUser.name || currentUser.id,
+        });
+
+        showAlert(`Akun staf baru [${fName}] dengan ID [${sId}] berhasil dibuat.`);
+      } else {
+        // Mode Update
+        const updatePayload: any = {
+          fullName: fName,
+          name: fName,
+          role: sRole,
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.name || currentUser.id,
+        };
+
+        await updateDoc(userRef, updatePayload);
+        showAlert(`Data profil staf [${uId}] berhasil diperbarui.`);
+      }
+
+      handleCloseStaffModal();
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menyimpan data staf.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteStaff(u: any) {
+    const targetUserId = u.userId || u.id;
+    if (String(targetUserId).toLowerCase() === "admin" || String(u.role).toUpperCase().includes("ROOT")) {
+      return showAlert("Akun ROOT_ADMIN tidak dapat dihapus demi keamanan sistem!");
+    }
+
+    if (!confirm(`Hapus akun staf [${u.fullName || targetUserId}] secara permanen?`)) return;
+
+    try {
+      setLoading(true);
+      await deleteDoc(doc(db, "users", targetUserId));
+      showAlert(`Akun staf [${targetUserId}] berhasil dihapus.`);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menghapus staf.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function getNextFamilyCode() {
+    let maxNum = 0;
+    families.forEach((f) => {
+      const code = String(f.familyCode || f.id || "").trim();
+      const match = code.match(/FAM-(\d+)/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+    return `FAM-${String(maxNum + 1).padStart(3, "0")}`;
+  }
+
+  function handleOpenCreateFamily() {
+    const nextCode = getNextFamilyCode();
+    setFamilyForm({ familyCode: nextCode, familyName: "" });
+    setFamilyModalMode("create");
+    setIsFamilyModalOpen(true);
+  }
+
+  function handleOpenEditFamily(f: any) {
+    setFamilyForm({
+      familyCode: f.familyCode || f.id,
+      familyName: f.familyName || f.name || "",
+    });
+    setFamilyModalMode("edit");
+    setIsFamilyModalOpen(true);
+  }
+
+  async function handleSaveFamily(e: React.FormEvent) {
+    e.preventDefault();
+    if (!familyForm.familyName.trim()) return showAlert("Nama Family wajib diisi.");
+
+    try {
+      setLoading(true);
+      const code = familyForm.familyCode;
+      const fRef = doc(db, "families", code);
+
+      if (familyModalMode === "create") {
+        await setDoc(fRef, {
+          familyCode: code,
+          familyName: familyForm.familyName.trim(),
+          name: familyForm.familyName.trim(),
+          createdAt: serverTimestamp(),
+          createdBy: currentUser.name || currentUser.id,
+        });
+        showAlert(`Family baru [${code}] berhasil ditambahkan.`);
+      } else {
+        await updateDoc(fRef, {
+          familyName: familyForm.familyName.trim(),
+          name: familyForm.familyName.trim(),
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.name || currentUser.id,
+        });
+        showAlert(`Family [${code}] berhasil diperbarui.`);
+      }
+      setIsFamilyModalOpen(false);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menyimpan Family.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteFamily(f: any) {
+    const code = f.familyCode || f.id;
+    const isUsed = products.some((p) => p.familyCode === code);
+    if (isUsed) {
+      return showAlert(`Family [${code}] tidak dapat dihapus karena masih digunakan oleh produk.`);
+    }
+    if (!confirm(`Hapus Family [${code} -${f.familyName || f.name}]?`)) return;
+
+    try {
+      setLoading(true);
+      await deleteDoc(doc(db, "families", code));
+      showAlert(`Family [${code}] berhasil dihapus.`);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menghapus Family.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // --- FUNGSI MIGRASI & PERBAIKAN ID CUSTOMER STRING ACAK KE CUST-xxxx ---
+  async function handleMigrateRandomCustomerIds() {
+    if (!confirm("Pindai dan ubah seluruh ID string acak customer menjadi format resmi CUST-xxxx secara berurutan?")) return;
+
+    try {
+      setLoading(true);
+      // Hitung angka tertinggi dari CUST-xxxx yang sudah sah
+      let maxNum = 0;
+      customers.forEach((c) => {
+        const id = String(c.customerId || c.id || "").trim();
+        const match = id.match(/CUST-(\d+)/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      });
+
+      const randomIdCustomers = customers.filter((c) => {
+        const id = String(c.id || "").trim();
+        return !id.startsWith("CUST-");
+      });
+
+      if (randomIdCustomers.length === 0) {
+        return showAlert("Semua customer sudah menggunakan format ID resmi CUST-xxxx. Tidak ada ID string acak yang perlu diperbaiki.");
+      }
+
+      let migratedCount = 0;
+      for (const oldCust of randomIdCustomers) {
+        maxNum += 1;
+        const newCustId = `CUST-${String(maxNum).padStart(4, "0")}`;
+        const oldDocId = oldCust.id;
+
+        // Tulis ke dokumen dengan ID baru CUST-xxxx
+        await setDoc(doc(db, "customers", newCustId), {
+          ...oldCust,
+          id: newCustId,
+          customerId: newCustId,
+          migratedFrom: oldDocId,
+          updatedAt: serverTimestamp(),
+        });
+
+        // Hapus dokumen lama yang ber-ID string acak
+        await deleteDoc(doc(db, "customers", oldDocId));
+        migratedCount++;
+      }
+
+      // Sinkronkan counter
+      await setDoc(doc(db, "counters", "customer"), { currentNumber: maxNum, updatedAt: serverTimestamp() }, { merge: true });
+
+      showAlert(`Migrasi berhasil! Sebanyak ${migratedCount} customer ber-ID string acak telah diperbarui ke format CUST-xxxx.`);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal melakukan migrasi ID Customer.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // --- FUNGSI AUDIT SELURUH PRIMARY KEY (ID INTEGRITY) ---
+  async function handleRunAuditAllIds() {
+    setIsAuditing(true);
+    setAuditReport([]);
+    try {
+      const collectionsToCheck = [
+        { name: "products", label: "Master Produk", data: products },
+        { name: "customers", label: "Master Customer", data: customers },
+        { name: "families", label: "Family Produk", data: families },
+        { name: "suppliers", label: "Supplier Rekanan", data: suppliers },
+        { name: "users", label: "Akun Pengguna", data: usersList },
+        { name: "sales_orders", label: "Sales Order", data: salesOrders },
+        { name: "delivery_orders", label: "Delivery Order", data: deliveryOrders },
+        { name: "purchase_orders", label: "Purchase Order", data: purchaseOrders },
+        { name: "receivings", label: "Penerimaan Barang", data: receivings },
+        { name: "stock_opnames", label: "Stock Opname", data: stockOpnames },
+        { name: "stock_adjustments", label: "Stock Adjustment", data: stockAdjustments },
+      ];
+
+      const reportItems: any[] = [];
+
+      collectionsToCheck.forEach((col) => {
+        const idCounts: Record<string, number> = {};
+        const duplicates: string[] = [];
+
+        col.data.forEach((item) => {
+          const id = String(item.id || item.documentNo || item.sku || item.customerId || "").trim();
+          if (id) {
+            idCounts[id] = (idCounts[id] || 0) + 1;
+            if (idCounts[id] === 2) {
+              duplicates.push(id);
+            }
+          }
+        });
+
+        reportItems.push({
+          collectionName: col.name,
+          collectionLabel: col.label,
+          totalRecords: col.data.length,
+          duplicateCount: duplicates.length,
+          duplicateIds: duplicates,
+          status: duplicates.length === 0 ? "VALID" : "DUPLICATE_FOUND",
+        });
+      });
+
+      setAuditReport(reportItems);
+      setIsAuditModalOpen(true);
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menjalankan audit ID.");
+    } finally {
+      setIsAuditing(false);
+    }
+  }
+
+  async function handleDeleteDuplicateRecord(collectionName: string, id: string) {
+    if (!confirm(`Hapus salah satu dokumen duplikat [${id}] dari koleksi [${collectionName}]?`)) return;
+    try {
+      setLoading(true);
+      await deleteDoc(doc(db, collectionName, id));
+      showAlert(`Dokumen duplikat [${id}] berhasil dihapus.`);
+      setIsAuditModalOpen(false);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal menghapus dokumen duplikat.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+    function openWhatsAppChat(phone: string, name: string, type: "CUSTOMER" | "SUPPLIER") {
+    const clean = String(phone || "").replace(/[^0-9]/g, "");
+    if (!clean) return showAlert("Nomor kontak belum terdaftar atau tidak valid.");
+    const formattedPhone = clean.startsWith("0") ? "62" + clean.slice(1) : clean.startsWith("62") ? clean : "62" + clean;
+    const text = type === "CUSTOMER"
+      ? `Halo Kak ${name}, kami dari Atin's Collection. Ada yang bisa kami bantu terkait pesanan Anda?`
+      : `Halo ${name}, kami dari tim gudang Atin's Collection terkait koordinasi pesanan dan pasokan barang.`;
+    window.open(`https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(text)}`, "_blank");
   }
 
   async function handleSaveProduct(savedData: any) {
@@ -769,6 +1313,32 @@ export default function DashboardClient() {
     setReviewSopTarget(sop);
     setReviewItemsData(JSON.parse(JSON.stringify(sop.items || [])));
     setIsSopReviewModalOpen(true);
+  }
+
+    async function handleCancelSopFromReview() {
+    if (!reviewSopTarget) return;
+    const reason = prompt("Masukkan alasan pembatalan dokumen Stock Opname:");
+    if (!reason || !reason.trim()) {
+      return showAlert("Alasan pembatalan wajib diisi!");
+    }
+    try {
+      setLoading(true);
+      const targetId = reviewSopTarget.documentNo || reviewSopTarget.sopId || reviewSopTarget.id;
+      await updateDoc(doc(db, "stock_opnames", targetId), {
+        status: "CANCELLED",
+        cancelReason: reason.trim(),
+        cancelledAt: serverTimestamp(),
+        cancelledBy: currentUser.name || currentUser.id,
+      });
+      showAlert(`Dokumen SOP [${targetId}] berhasil dibatalkan.`);
+      setIsSopReviewModalOpen(false);
+      setReviewSopTarget(null);
+      loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || "Gagal membatalkan SOP.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleCompleteSopReview() {
@@ -1300,11 +1870,22 @@ export default function DashboardClient() {
     try {
       setLoading(true);
       if (customerModalMode === "create") {
+        // Hitung auto-increment berdasarkan nomor tertinggi CUST-xxxx yang sudah ada
+        let highestNum = 0;
+        customers.forEach((c) => {
+          const cid = String(c.customerId || c.id || "").trim();
+          const match = cid.match(/CUST-(\d+)/i);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > highestNum) highestNum = num;
+          }
+        });
+
         const counterRef = doc(db, "counters", "customer");
         const nextCustId = await runTransaction(db, async (tx) => {
           const cSnap = await tx.get(counterRef);
-          const curr = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
-          const next = curr + 1;
+          const currFromCounter = cSnap.exists() ? (cSnap.data().currentNumber || 0) : 0;
+          const next = Math.max(highestNum, currFromCounter) + 1;
           const genId = `CUST-${String(next).padStart(4, "0")}`;
           tx.set(counterRef, { currentNumber: next, updatedAt: serverTimestamp() }, { merge: true });
           tx.set(doc(db, "customers", genId), {
@@ -2982,6 +3563,22 @@ export default function DashboardClient() {
                 </form>
               </div>
 
+                            {/* AUDIT PRIMARY KEY & ID INTEGRITY CHECK */}
+              {isRootAdmin && (
+                <div className="border-b border-slate-200 pb-5 space-y-3 text-xs">
+                  <h3 className="text-sm font-bold text-slate-900 uppercase">Audit Integritas Primary Key (ID Database)</h3>
+                  <p className="text-slate-500">Pindai seluruh ID dokumen di semua koleksi untuk mendeteksi ID duplikat atau ganda.</p>
+                  <button
+                    type="button"
+                    disabled={isAuditing}
+                    onClick={handleRunAuditAllIds}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 text-white font-semibold rounded-lg shadow-xs"
+                  >
+                    {isAuditing ? "Memindai Seluruh Database..." : "🔍 Jalankan Audit Primary Key"}
+                  </button>
+                </div>
+              )}
+
               {/* PENGATURAN API KEY RAJAONGKIR (UJI DULU BARU SIMPAN) */}
               {isRootAdmin && (
                 <div className="space-y-3 text-xs">
@@ -3088,56 +3685,85 @@ export default function DashboardClient() {
                 >
                   Daftar Pelanggan ({customers.length})
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setHumanSubTab("families")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                    humanSubTab === "families" ? "bg-[#9F1239] text-white shadow-xs" : "bg-white text-slate-700 border border-slate-200"
+                  }`}
+                >
+                  Family Produk ({families.length})
+                </button>
               </div>
 
-              {/* 7.1 STAF GUDANG */}
+              {/* 7.1 STAF GUDANG CRUD LENGKAP */}
               {humanSubTab === "staff" && (
                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3.5">
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="text-xs font-bold text-slate-900 uppercase">Akun Pengguna Staf</span>
-                      <p className="text-[11px] text-slate-500">Akses operasional gudang dan manajemen akun</p>
+                      <p className="text-[11px] text-slate-500">Akses operasional gudang dan manajemen akun tim</p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        const fallbackId = `ST-${String(usersList.length + 1).padStart(2, "0")}`;
-                        setStaffForm({ staffId: fallbackId, fullName: "", userId: "", password: "" });
-                        setStaffModalMode("create");
-                        setIsStaffModalOpen(true);
-                      }}
-                      className="px-3.5 py-1.5 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-semibold rounded-lg shadow-xs"
+                      onClick={handleOpenCreateStaff}
+                      className="px-3.5 py-1.5 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-semibold rounded-lg shadow-xs transition"
                     >
                       + Tambah Staf Baru
                     </button>
                   </div>
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                      <tr>
-                        <th className="p-2.5">ID Staf</th>
-                        <th className="p-2.5">User ID</th>
-                        <th className="p-2.5">Nama Lengkap</th>
-                        <th className="p-2.5">Role</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {usersList.map((u, idx) => (
-                        <tr key={u.id || idx}>
-                          <td className="p-2.5 font-mono font-bold text-slate-900">{u.staffId || `ST-${String(idx + 1).padStart(2, "0")}`}</td>
-                          <td className="p-2.5 font-mono">{u.userId || u.username}</td>
-                          <td className="p-2.5 font-semibold text-slate-900">{u.fullName || u.name}</td>
-                          <td className="p-2.5">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800">
-                              {u.role || "STAFF_GUDANG"}
-                            </span>
-                          </td>
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="p-2.5">ID Staf</th>
+                          <th className="p-2.5">User ID</th>
+                          <th className="p-2.5">Nama Lengkap</th>
+                          <th className="p-2.5">Role</th>
+                          <th className="p-2.5 text-right">Tindakan</th>
                         </tr>
-                      ))}
-                      {usersList.length === 0 && (
-                        <tr><td colSpan={4} className="p-4 text-center text-slate-400">Belum ada data staf terdaftar.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {usersList.map((u, idx) => (
+                          <tr key={u.id || idx} className="hover:bg-slate-50/50">
+                            <td className="p-2.5 font-mono font-bold text-slate-900">{u.staffId || `ST-${String(idx + 1).padStart(2, "0")}`}</td>
+                            <td className="p-2.5 font-mono font-medium text-slate-700">{u.userId || u.username || u.id}</td>
+                            <td className="p-2.5 font-semibold text-slate-900">{u.fullName || u.name}</td>
+                            <td className="p-2.5">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                String(u.role).includes("ROOT") ? "bg-amber-100 text-amber-800" :
+                                String(u.role).includes("ADMIN") ? "bg-purple-100 text-purple-800" :
+                                "bg-slate-100 text-slate-800"
+                              }`}>
+                                {u.role || "STAFF_GUDANG"}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditStaff(u)}
+                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 rounded text-[11px] font-semibold"
+                              >
+                                Edit
+                              </button>
+                              {!String(u.role).includes("ROOT") && String(u.userId || u.id).toLowerCase() !== "admin" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteStaff(u)}
+                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-semibold"
+                                >
+                                  Hapus
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {usersList.length === 0 && (
+                          <tr><td colSpan={5} className="p-4 text-center text-slate-400">Belum ada data staf terdaftar.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 
@@ -3174,8 +3800,22 @@ export default function DashboardClient() {
                         <tr key={s.id || s.supplierId}>
                           <td className="p-2.5 font-mono font-bold text-slate-900">{s.supplierId || s.documentNo}</td>
                           <td className="p-2.5 font-semibold text-slate-900">{s.supplierName}</td>
-                          <td className="p-2.5 font-mono">{s.phone}</td>
-                          <td className="p-2.5">{s.address}</td>
+                          <td className="p-2.5 font-mono">
+                            <div className="flex items-center gap-1.5">
+                              <span>{s.phone || "-"}</span>
+                              {s.phone && (
+                                <button
+                                  type="button"
+                                  onClick={() => openWhatsAppChat(s.phone, s.supplierName, "SUPPLIER")}
+                                  className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold"
+                                  title="Hubungi WhatsApp Supplier"
+                                >
+                                  WA
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-2.5">{s.address || "-"}</td>
                         </tr>
                       ))}
                       {suppliers.length === 0 && (
@@ -3183,6 +3823,69 @@ export default function DashboardClient() {
                       )}
                     </tbody>
                   </table>
+                </div>
+              )}
+
+                            {/* 7.4 FAMILY PRODUK CRUD (FAM-xxx AUTO-INCREMENT) */}
+              {humanSubTab === "families" && (
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3.5">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 uppercase">Kategori Family Produk (FAM-xxx)</span>
+                      <p className="text-[11px] text-slate-500">Master pengelompokan produk dengan kode auto-increment berurutan</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenCreateFamily}
+                      className="px-3.5 py-1.5 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-semibold rounded-lg shadow-xs"
+                    >
+                      + Tambah Family Baru
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="p-2.5">Kode Family</th>
+                          <th className="p-2.5">Nama Family</th>
+                          <th className="p-2.5">Jumlah SKU Terdaftar</th>
+                          <th className="p-2.5 text-right">Tindakan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {families.map((f) => {
+                          const code = f.familyCode || f.id;
+                          const count = products.filter((p) => p.familyCode === code).length;
+                          return (
+                            <tr key={code} className="hover:bg-slate-50/50">
+                              <td className="p-2.5 font-mono font-bold text-slate-900">{code}</td>
+                              <td className="p-2.5 font-semibold text-slate-900">{f.familyName || f.name}</td>
+                              <td className="p-2.5 font-medium text-slate-600">{count} Produk</td>
+                              <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditFamily(f)}
+                                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 rounded text-[11px] font-semibold"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteFamily(f)}
+                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-semibold"
+                                >
+                                  Hapus
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {families.length === 0 && (
+                          <tr><td colSpan={4} className="p-4 text-center text-slate-400">Belum ada data Family Produk.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 
@@ -3239,7 +3942,21 @@ export default function DashboardClient() {
                             <tr key={c.id} className="hover:bg-slate-50/50">
                               <td className="p-2.5 font-mono font-bold text-slate-900">{determinedId}</td>
                               <td className="p-2.5 font-semibold text-slate-900">{c.customerName}</td>
-                              <td className="p-2.5 font-mono">{c.phone || "-"}</td>
+                              <td className="p-2.5 font-mono">
+                                <div className="flex items-center gap-1.5">
+                                  <span>{c.phone || "-"}</span>
+                                  {c.phone && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openWhatsAppChat(c.phone, c.customerName, "CUSTOMER")}
+                                      className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold"
+                                      title="Hubungi WhatsApp Customer"
+                                    >
+                                      WA
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
                               <td className="p-2.5">{c.email || "-"}</td>
                               <td className="p-2.5 max-w-sm truncate">{c.displayAddress || c.address || "-"}</td>
                             </tr>
@@ -3642,10 +4359,7 @@ export default function DashboardClient() {
         isOpen={isAdjModalOpen}
         products={products}
         onClose={() => setIsAdjModalOpen(false)}
-        onExecuteAdjustment={async () => {
-          setIsAdjModalOpen(false);
-          loadAllData();
-        }}
+        onExecuteAdjustment={handleExecuteStockAdjustment}
         showAlert={showAlert}
       />
 
@@ -3655,10 +4369,7 @@ export default function DashboardClient() {
         families={families}
         currentUserName={currentUser.name}
         onClose={() => setIsInitSopModalOpen(false)}
-        onConfirmInit={async () => {
-          setIsInitSopModalOpen(false);
-          loadAllData();
-        }}
+        onConfirmInit={handleConfirmInitStockOpname}
         showAlert={showAlert}
       />
 
@@ -3826,23 +4537,36 @@ export default function DashboardClient() {
               </tbody>
             </table>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsSopReviewModalOpen(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg border border-slate-200"
-              >
-                Tutup
-              </button>
-              {reviewSopTarget.status === "COUNTING_COMPLETED" && (
+            <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+              <div>
+                {reviewSopTarget.status !== "POSTED" && reviewSopTarget.status !== "CANCELLED" && (
+                  <button
+                    type="button"
+                    onClick={handleCancelSopFromReview}
+                    className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg shadow-xs"
+                  >
+                    Batalkan Dokumen SOP
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={handleCompleteSopReview}
-                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-lg shadow-xs"
+                  onClick={() => setIsSopReviewModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg border border-slate-200"
                 >
-                  Selesai Review (Set COMPLETED_REVIEW)
+                  Tutup
                 </button>
-              )}
+                {reviewSopTarget.status === "COUNTING_COMPLETED" && (
+                  <button
+                    type="button"
+                    onClick={handleCompleteSopReview}
+                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-lg shadow-xs"
+                  >
+                    Selesai Review (Set COMPLETED_REVIEW)
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -4069,6 +4793,217 @@ export default function DashboardClient() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+                  {/* MODAL FORM TAMBAH / EDIT STAF GUDANG */}
+      {isStaffModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[90] animate-fadeIn">
+          <div className="bg-white rounded-xl w-full max-w-sm p-5 shadow-xl border border-slate-200 text-xs">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {staffModalMode === "create" ? "Tambah Akun Staf Baru" : `Edit Profil Staf [${staffForm.staffId}]`}
+                </h3>
+                <p className="text-[11px] text-slate-500">Kelola kredensial dan hak akses staf gudang</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseStaffModal}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold leading-none"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStaff} className="space-y-3">
+              <div>
+                <label className="block font-semibold mb-1 text-slate-700">ID Staf (Auto-Increment)</label>
+                <input
+                  type="text"
+                  disabled
+                  value={staffForm.staffId}
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-slate-100 font-mono font-bold text-slate-800 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1 text-slate-700">User ID (Username Login) *</label>
+                <input
+                  type="text"
+                  required
+                  disabled={staffModalMode === "edit"}
+                  placeholder="misal: ahmad_gudang"
+                  value={staffForm.userId}
+                  onChange={(e) => setStaffForm({ ...staffForm, userId: e.target.value.toLowerCase().replace(/\s+/g, "_") })}
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-white font-mono outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1 text-slate-700">Nama Lengkap *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Nama Lengkap Staf"
+                  value={staffForm.fullName}
+                  onChange={(e) => setStaffForm({ ...staffForm, fullName: e.target.value })}
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1 text-slate-700">Hak Akses / Role *</label>
+                <select
+                  value={(staffForm as any).role || "STAFF_GUDANG"}
+                  onChange={(e) => setStaffForm({ ...staffForm, role: e.target.value } as any)}
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-none font-medium"
+                >
+                  <option value="STAFF_GUDANG">STAFF_GUDANG (Operator)</option>
+                  <option value="ADMIN_GUDANG">ADMIN_GUDANG (Supervisor)</option>
+                </select>
+              </div>
+
+              {staffModalMode === "create" && (
+                <div>
+                  <label className="block font-semibold mb-1 text-slate-700">Password Akun *</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Minimal 6 karakter"
+                    value={staffForm.password}
+                    onChange={(e) => setStaffForm({ ...staffForm, password: e.target.value })}
+                    className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-none"
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handleCloseStaffModal}
+                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-[#9F1239] hover:bg-[#881337] text-white font-semibold rounded-lg shadow-xs"
+                >
+                  {staffModalMode === "create" ? "Simpan Staf" : "Perbarui Profil"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CRUD FAMILY PRODUK */}
+      {isFamilyModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[90] animate-fadeIn">
+          <div className="bg-white rounded-xl w-full max-w-sm p-5 shadow-xl border border-slate-200 text-xs">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
+              <h3 className="text-sm font-bold text-slate-900">
+                {familyModalMode === "create" ? "Tambah Family Baru" : `Edit Family [${familyForm.familyCode}]`}
+              </h3>
+              <button type="button" onClick={() => setIsFamilyModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
+            </div>
+            <form onSubmit={handleSaveFamily} className="space-y-3">
+              <div>
+                <label className="block font-semibold mb-1 text-slate-700">Kode Family (Auto-Increment)</label>
+                <input
+                  type="text"
+                  disabled
+                  value={familyForm.familyCode}
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-slate-100 font-mono font-bold text-slate-800 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1 text-slate-700">Nama Family *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="misal: Kerudung Segiempat"
+                  value={familyForm.familyName}
+                  onChange={(e) => setFamilyForm({ ...familyForm, familyName: e.target.value })}
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-none"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" onClick={() => setIsFamilyModalOpen(false)} className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold">Batal</button>
+                <button type="submit" className="px-4 py-1.5 bg-[#9F1239] hover:bg-[#881337] text-white font-semibold rounded-lg shadow-xs">Simpan</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LAPORAN AUDIT PRIMARY KEY & AKSI DEDUPLIKASI */}
+      {isAuditModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[90] animate-fadeIn">
+          <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-xl border border-slate-200 max-h-[90vh] overflow-y-auto text-xs">
+            <div className="flex justify-between items-start border-b border-slate-100 pb-3 mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Laporan Integritas Primary Key Database</h3>
+                <p className="text-[11px] text-slate-500">Hasil pemindaian keunikan ID dokumen di seluruh koleksi sistem</p>
+              </div>
+              <button type="button" onClick={() => setIsAuditModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
+            </div>
+
+            <table className="w-full text-left border border-slate-200 rounded-lg overflow-hidden mb-4">
+              <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                <tr>
+                  <th className="p-2">Koleksi</th>
+                  <th className="p-2 text-center">Total Dokumen</th>
+                  <th className="p-2 text-center">ID Ganda</th>
+                  <th className="p-2 text-center">Status</th>
+                  <th className="p-2 text-right">Tindakan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {auditReport.map((rep, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/50">
+                    <td className="p-2 font-semibold text-slate-900">{rep.collectionLabel} <span className="font-mono text-slate-400 text-[10px]">({rep.collectionName})</span></td>
+                    <td className="p-2 text-center font-bold">{rep.totalRecords}</td>
+                    <td className="p-2 text-center font-bold text-rose-700">{rep.duplicateCount}</td>
+                    <td className="p-2 text-center">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${rep.status === "VALID" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                        {rep.status === "VALID" ? "Semua ID Unik" : "Duplikat Terdeteksi"}
+                      </span>
+                    </td>
+                    <td className="p-2 text-right">
+                      {rep.duplicateCount > 0 ? (
+                        <div className="space-y-1">
+                          {rep.duplicateIds.map((dupId: string) => (
+                            <button
+                              key={dupId}
+                              type="button"
+                              onClick={() => handleDeleteDuplicateRecord(rep.collectionName, dupId)}
+                              className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-semibold block ml-auto"
+                            >
+                              Hapus Salinan: {dupId}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsAuditModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg border border-slate-200"
+              >
+                Tutup Laporan
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -5045,8 +5045,8 @@
       ],
       "format": "cjs"
     },
-    ".open-next/server-functions/default/.next/server/app/api/portal/data/route.js": {
-      "bytes": 10631,
+    ".open-next/server-functions/default/.next/server/app/api/admin/users/route.js": {
+      "bytes": 11167,
       "imports": [
         {
           "path": ".open-next/server-functions/default/node_modules/next/dist/shared/lib/router/utils/app-paths.js",
@@ -5111,8 +5111,8 @@
       ],
       "format": "cjs"
     },
-    ".open-next/server-functions/default/.next/server/app/api/admin/users/route.js": {
-      "bytes": 11167,
+    ".open-next/server-functions/default/.next/server/app/api/portal/data/route.js": {
+      "bytes": 10631,
       "imports": [
         {
           "path": ".open-next/server-functions/default/node_modules/next/dist/shared/lib/router/utils/app-paths.js",
@@ -5865,14 +5865,14 @@
           "original": "D:\\Atins-Collection\\admin-portal\\.open-next\\server-functions\\default\\.next\\server\\app\\api\\shipping\\cost\\route.js"
         },
         {
-          "path": ".open-next/server-functions/default/.next/server/app/api/portal/data/route.js",
-          "kind": "require-call",
-          "original": "D:\\Atins-Collection\\admin-portal\\.open-next\\server-functions\\default\\.next\\server\\app\\api\\portal\\data\\route.js"
-        },
-        {
           "path": ".open-next/server-functions/default/.next/server/app/api/admin/users/route.js",
           "kind": "require-call",
           "original": "D:\\Atins-Collection\\admin-portal\\.open-next\\server-functions\\default\\.next\\server\\app\\api\\admin\\users\\route.js"
+        },
+        {
+          "path": ".open-next/server-functions/default/.next/server/app/api/portal/data/route.js",
+          "kind": "require-call",
+          "original": "D:\\Atins-Collection\\admin-portal\\.open-next\\server-functions\\default\\.next\\server\\app\\api\\portal\\data\\route.js"
         },
         {
           "path": ".open-next/server-functions/default/.next/server/app/api/suppliers/route.js",
@@ -8901,11 +8901,11 @@
         ".open-next/server-functions/default/.next/server/app/api/shipping/cost/route.js": {
           "bytesInOutput": 10532
         },
-        ".open-next/server-functions/default/.next/server/app/api/portal/data/route.js": {
-          "bytesInOutput": 10762
-        },
         ".open-next/server-functions/default/.next/server/app/api/admin/users/route.js": {
           "bytesInOutput": 11223
+        },
+        ".open-next/server-functions/default/.next/server/app/api/portal/data/route.js": {
+          "bytesInOutput": 10762
         },
         ".open-next/server-functions/default/.next/server/app/api/suppliers/route.js": {
           "bytesInOutput": 8777
