@@ -114,6 +114,54 @@
       "namedRegex": "^/favicon\\.ico(?:/)?$"
     },
     {
+      "page": "/konter",
+      "regex": "^/konter(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/konter(?:/)?$"
+    },
+    {
+      "page": "/konter/admin",
+      "regex": "^/konter/admin(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/konter/admin(?:/)?$"
+    },
+    {
+      "page": "/konter/dashboard",
+      "regex": "^/konter/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/konter/dashboard(?:/)?$"
+    },
+    {
+      "page": "/konter/keuangan",
+      "regex": "^/konter/keuangan(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/konter/keuangan(?:/)?$"
+    },
+    {
+      "page": "/konter/laporan",
+      "regex": "^/konter/laporan(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/konter/laporan(?:/)?$"
+    },
+    {
+      "page": "/konter/master",
+      "regex": "^/konter/master(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/konter/master(?:/)?$"
+    },
+    {
+      "page": "/konter/pengeluaran",
+      "regex": "^/konter/pengeluaran(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/konter/pengeluaran(?:/)?$"
+    },
+    {
+      "page": "/konter/transaksi",
+      "regex": "^/konter/transaksi(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/konter/transaksi(?:/)?$"
+    },
+    {
       "page": "/login",
       "regex": "^/login(?:/)?$",
       "routeKeys": {},

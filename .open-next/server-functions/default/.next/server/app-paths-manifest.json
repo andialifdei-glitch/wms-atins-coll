@@ -14,5 +14,13 @@
   "/api/receiving/create/route": "app/api/receiving/create/route.js",
   "/api/shipping/calculate/route": "app/api/shipping/calculate/route.js",
   "/login/page": "app/login/page.js",
+  "/konter/admin/page": "app/konter/admin/page.js",
+  "/konter/dashboard/page": "app/konter/dashboard/page.js",
+  "/konter/keuangan/page": "app/konter/keuangan/page.js",
+  "/konter/laporan/page": "app/konter/laporan/page.js",
+  "/konter/master/page": "app/konter/master/page.js",
+  "/konter/page": "app/konter/page.js",
+  "/konter/pengeluaran/page": "app/konter/pengeluaran/page.js",
+  "/konter/transaksi/page": "app/konter/transaksi/page.js",
   "/page": "app/page.js"
 }

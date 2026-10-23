@@ -1,66 +1,174 @@
 "use client";
-import { useState } from 'react';
-import Link from 'next/link';
 
-export default function Sidebar() {
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+import React, { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
-  const toggleMenu = (name: string) => {
-    setOpenDropdown(openDropdown === name ? null : name);
-  };
+interface SidebarProps {
+  activeTab?: string;
+  setActiveTab?: (tab: string) => void;
+  onLogout?: () => void;
+  userRole?: string;
+}
+
+export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userRole }: SidebarProps) {
+  const pathname = usePathname();
+
+  const [openWms, setOpenWms] = useState<boolean>(true);
+  const [openKonter, setOpenKonter] = useState<boolean>(true);
+
+  const wmsMenus = [
+    { id: "dashboard", label: "Dashboard WMS", href: "/", icon: "📊" },
+    { id: "sales", label: "Sales & Delivery Order", href: "/?tab=sales", icon: "📦" },
+    { id: "inventory", label: "Katalog Persediaan", href: "/?tab=inventory", icon: "🏷️" },
+    { id: "purchase", label: "Purchase & Receiving", href: "/?tab=purchase", icon: "📥" },
+    { id: "reports", label: "Pusat Laporan Historis", href: "/?tab=reports", icon: "📑" },
+    { id: "settings", label: "Konfigurasi Sistem", href: "/?tab=settings", icon: "⚙️" },
+    { id: "human", label: "Manajemen Staf & Relasi", href: "/?tab=human", icon: "👥" },
+  ];
+
+  const konterMenus = [
+    { id: "konter-dash", label: "Dashboard Konter", href: "/konter", icon: "📈" },
+    { id: "master", label: "Pengelolaan Stock", href: "/master", icon: "📦" },
+    { id: "movement", label: "Stock Movement Log", href: "/movement", icon: "🔄" },
+    { id: "adjustment", label: "Stock Adjustment", href: "/adjustment", icon: "⚖️" },
+    { id: "po", label: "Purchase Order (PO)", href: "/po", icon: "📝" },
+    { id: "receiving", label: "Penerimaan (Receiving)", href: "/receiving", icon: "📥" },
+    { id: "sales-report", label: "Laporan Penjualan", href: "/sales-report", icon: "📋" },
+    { id: "stock-card", label: "Kartu Stock", href: "/stock-card", icon: "🗂️" },
+    { id: "cash-count", label: "Daily Cash Count", href: "/cash-count", icon: "💰" },
+    { id: "import-sales", label: "Import Penjualan", href: "/import-sales", icon: "⚡" },
+    { id: "suppliers", label: "Kelola Supplier", href: "/suppliers", icon: "🤝" },
+  ];
+
+  const isHomeActive = pathname === "/";
 
   return (
-    <aside className="w-64 min-h-screen bg-[#FFF8F8] border-r border-[#F0D5D5] p-4 flex flex-col gap-2">
-      <div className="px-3 py-4 text-xl font-bold text-[#A75D5D]">
-        Atin&apos;s Collection
+    <aside className="w-64 min-h-screen bg-slate-900 text-slate-100 border-r border-slate-800 p-4 flex flex-col justify-between shrink-0 select-none z-30">
+      <div className="flex flex-col gap-4">
+        {/* Brand Header */}
+        <div className="px-3 py-2 border-b border-slate-800">
+          <div className="text-[11px] uppercase tracking-wider text-cyan-400 font-bold">Business Control Center</div>
+          <div className="text-base font-extrabold text-white mt-0.5 tracking-tight">Emir Cell & Atin Group</div>
+        </div>
+
+        {/* Dashboard Utama */}
+        <div className="flex flex-col gap-1">
+          <Link
+            href="/"
+            className={
+              "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all " +
+              (isHomeActive
+                ? "bg-indigo-600 text-white font-semibold shadow-sm"
+                : "text-slate-300 hover:bg-slate-800 hover:text-white")
+            }
+          >
+            <span>🖥️</span>
+            <span>Dashboard Utama</span>
+          </Link>
+        </div>
+
+        {/* Menu Dropdown Atin's Collection (WMS) */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setOpenWms(!openWms)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-rose-400">📦</span>
+              <span className="font-semibold text-rose-300">Atin&apos;s Collection</span>
+            </div>
+            <span className={"text-[10px] text-slate-400 transform transition-transform " + (openWms ? "rotate-180" : "")}>
+              ▼
+            </span>
+          </button>
+
+          {openWms && (
+            <div className="mt-1 pl-3 ml-3 border-l-2 border-rose-500/30 flex flex-col gap-1">
+              {wmsMenus.map((item) => {
+                const isActive = pathname === "/" && activeTab === item.id;
+                return (
+                  <Link
+                    key={item.id}
+                    href={item.href}
+                    onClick={() => setActiveTab && setActiveTab(item.id)}
+                    className={
+                      "w-full text-left flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all " +
+                      (isActive
+                        ? "bg-rose-500/20 text-rose-300 font-bold border-l-2 border-rose-400"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60")
+                    }
+                  >
+                    <span className="text-xs">{item.icon}</span>
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Menu Dropdown Konter & PPOB */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setOpenKonter(!openKonter)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-emerald-400">⚡</span>
+              <span className="font-semibold text-emerald-300">Konter & PPOB</span>
+            </div>
+            <span className={"text-[10px] text-slate-400 transform transition-transform " + (openKonter ? "rotate-180" : "")}>
+              ▼
+            </span>
+          </button>
+
+          {openKonter && (
+            <div className="mt-1 pl-3 ml-3 border-l-2 border-emerald-500/30 flex flex-col gap-1 max-h-[380px] overflow-y-auto pr-1">
+              {konterMenus.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.id}
+                    href={item.href}
+                    className={
+                      "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all " +
+                      (isActive
+                        ? "bg-emerald-500/20 text-emerald-300 font-bold border-l-2 border-emerald-400"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60")
+                    }
+                  >
+                    <span className="text-xs">{item.icon}</span>
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
-      <Link href="/dashboard" className="px-3 py-2 rounded-lg hover:bg-[#FBE8E8] text-gray-700 font-medium">
-        Dashboard
-      </Link>
-
-      <div>
-        <button
-          onClick={() => toggleMenu('master')}
-          className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-[#FBE8E8] text-gray-700 font-medium"
-        >
-          <span>Master Katalog</span>
-          <span className={`text-xs transition-transform ${openDropdown === 'master' ? 'rotate-180' : ''}`}>▼</span>
-        </button>
-        {openDropdown === 'master' && (
-          <div className="pl-4 mt-1 flex flex-col gap-1 border-l-2 border-[#E8C5C5] ml-3">
-            <Link href="/catalog/products" className="px-3 py-1.5 text-sm text-gray-600 hover:text-[#A75D5D]">
-              Daftar Produk
-            </Link>
-            <Link href="/catalog/categories" className="px-3 py-1.5 text-sm text-gray-600 hover:text-[#A75D5D]">
-              Kategori & Assortment
-            </Link>
-          </div>
-        )}
-      </div>
-
-      <div>
-        <button
-          onClick={() => toggleMenu('reports')}
-          className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-[#FBE8E8] text-gray-700 font-medium"
-        >
-          <span>Laporan</span>
-          <span className={`text-xs transition-transform ${openDropdown === 'reports' ? 'rotate-180' : ''}`}>▼</span>
-        </button>
-        {openDropdown === 'reports' && (
-          <div className="pl-4 mt-1 flex flex-col gap-1 border-l-2 border-[#E8C5C5] ml-3">
-            <Link href="/reports/stock" className="px-3 py-1.5 text-sm text-gray-600 hover:text-[#A75D5D]">
-              Laporan Stok
-            </Link>
-            <Link href="/reports/sales" className="px-3 py-1.5 text-sm text-gray-600 hover:text-[#A75D5D]">
-              Laporan Penjualan
-            </Link>
-            <Link href="/reports/hr" className="px-3 py-1.5 text-sm text-gray-600 hover:text-[#A75D5D]">
-              Laporan SDM
-            </Link>
-          </div>
+      {/* Footer Info */}
+      <div className="pt-3 border-t border-slate-800/80 flex flex-col gap-2">
+        <div className="text-[11px] text-slate-400 px-2 flex justify-between items-center">
+          <span>Role: <span className="text-emerald-400 font-semibold">{userRole || "ROOT_ADMIN"}</span></span>
+          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">WMS Active</span>
+        </div>
+        {onLogout && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="w-full text-left px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors flex items-center gap-2"
+          >
+            <span>🚪</span>
+            <span>Keluar Sistem</span>
+          </button>
         )}
       </div>
     </aside>
   );
 }
+
+export default Sidebar;

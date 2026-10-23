@@ -1,4 +1,4 @@
-
+﻿
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
@@ -12,7 +12,7 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
 };
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+const app = getApps().some((a) => a.name === "[DEFAULT]") ? getApp() : initializeApp(firebaseConfig);
 
 const databaseId =
   "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f";
@@ -21,3 +21,9 @@ const databaseId =
 export const db = getFirestore(app, databaseId);
 
 export { app };
+
+// Alias compatibility for merged konter module
+
+// Firestore instance untuk modul konter (mengarah ke database default)
+export const konterFirestore = getFirestore(app);
+

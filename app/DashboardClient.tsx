@@ -1,5 +1,17 @@
-﻿"use client";
+"use client";
+import KonterDashboardView from '@/components/konter/KonterDashboardView';
+import dynamic from "next/dynamic";
 
+const KonterStockView = dynamic(() => import("./master/page"), { ssr: false });
+const KonterMovementView = dynamic(() => import("./movement/page"), { ssr: false });
+const KonterAdjustmentView = dynamic(() => import("./adjustment/page"), { ssr: false });
+const KonterPoView = dynamic(() => import("./purchase/page"), { ssr: false });
+const KonterReceivingView = dynamic(() => import("./receiving/page"), { ssr: false });
+const KonterSalesReportView = dynamic(() => import("./sales-report/page"), { ssr: false });
+const KonterStockCardView = dynamic(() => import("./reports/card/page"), { ssr: false });
+const KonterCashCountView = dynamic(() => import("./cash-count/page"), { ssr: false });
+const KonterImportView = dynamic(() => import("./import-sales/page"), { ssr: false });
+const KonterSupplierView = dynamic(() => import("./suppliers/page"), { ssr: false });
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { db } from "../lib/firebase";
 import {
@@ -24,7 +36,25 @@ import SalesOrderModal from "@/components/modals/SalesOrderModal";
 import CreatePurchaseOrderModal from "@/components/modals/CreatePurchaseOrderModal";
 import NotificationBell from "@/components/notifications/NotificationBell";
 
-type MainTab = "dashboard" | "sales" | "inventory" | "purchase" | "reports" | "settings" | "human";
+type MainTab =
+  | "dashboard"
+  | "sales"
+  | "inventory"
+  | "purchase"
+  | "reports"
+  | "settings"
+  | "human"
+  | "konter"
+  | "konter_stock"
+  | "konter_movement"
+  | "konter_adjustment"
+  | "konter_po"
+  | "konter_receiving"
+  | "konter_sales_report"
+  | "konter_stock_card"
+  | "konter_cash_count"
+  | "konter_import"
+  | "konter_supplier";
 
 interface RegionItem {
   id: string;
@@ -41,7 +71,7 @@ function generateValidPdfBlob(title: string, headers: string[], rows: any[][]): 
   contentStream += "BT\n/F1 9 Tf\n";
   let x = 40;
   headers.forEach((h) => {
-    contentStream += `${x} ${y} Td\n(${sanitize(h)}) Tj\n${-x} ${-y} Td\n`;
+    contentStream += `${x} ${y} Td\n(` + sanitize(h) + `) Tj\n${-x} ${-y} Td\n`;
     x += 95;
   });
   contentStream += "ET\n";
@@ -51,7 +81,7 @@ function generateValidPdfBlob(title: string, headers: string[], rows: any[][]): 
   rows.slice(0, 48).forEach((row) => {
     let rx = 40;
     row.forEach((cell) => {
-      contentStream += `${rx} ${y} Td\n(${sanitize(String(cell))}) Tj\n${-rx} ${-y} Td\n`;
+      contentStream += `${rx} ${y} Td\n(` + sanitize(String(cell)) + `) Tj\n${-rx} ${-y} Td\n`;
       rx += 95;
     });
     y -= 13;
@@ -158,7 +188,24 @@ function getInitialUserSession() {
 }
 
 export default function DashboardClient() {
-  const router = useRouter();
+    const router = useRouter();
+
+      const handleLogout = () => {
+    const yakin = window.confirm("Apakah Anda yakin ingin logout dari sistem?");
+    if (!yakin) return;
+
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+      document.cookie.split(";").forEach((c) => {
+        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
+    window.location.href = "/login";
+  };
+
 
   // Navigation State
   const [currentTab, setCurrentTab] = useState<MainTab>("dashboard");
@@ -1395,8 +1442,8 @@ export default function DashboardClient() {
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       }`}>
         <div className="p-5 border-b border-[#4A1528]">
-          <h1 className="text-sm font-bold text-white tracking-wide">Atin&apos;s Collection</h1>
-          <p className="text-[11px] text-rose-300/80 mt-0.5">Warehouse Management System</p>
+          <h1 className="text-sm font-bold text-white tracking-wide">BUSSINESS CONTROL CENTRE</h1>
+          <p className="text-[11px] text-rose-300/80 mt-0.5">Andi & Atin IT Support</p>
           <div className="mt-3.5 px-3 py-2 bg-[#4A1528] rounded-lg text-xs flex justify-between items-center text-rose-200">
             <span className="truncate pr-2">
               Login: <b className="text-white">{currentUser.name || currentUser.id || "Administrator"}</b>
@@ -1413,96 +1460,200 @@ export default function DashboardClient() {
           </div>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {[
-            { key: "dashboard", label: "Dashboard" },
-            { key: "sales", label: "Sales & Delivery Order" },
-            { key: "inventory", label: "Katalog Persediaan" },
-            { key: "purchase", label: "Purchase & Receiving" },
-            { key: "reports", label: "Pusat Laporan Historis" },
-            { key: "settings", label: "Konfigurasi Sistem" },
-            ...(isRootAdmin ? [{ key: "human", label: "Manajemen Staf & Relasi" }] : []),
-          ].map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => {
-                setCurrentTab(item.key as MainTab);
-                setIsMobileMenuOpen(false);
-              }}
-              className={`w-full flex items-center px-3 py-2.5 rounded-lg text-xs font-semibold transition ${
-                currentTab === item.key ? "bg-[#9F1239] text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"
-              }`}
-            >
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
+        <nav className="flex-1 p-3 space-y-3 overflow-y-auto">
+          {/* Section A: Atin's Collection WMS */}
+          <div className="space-y-1">
+            <div className="px-3 py-1 text-[10px] uppercase font-bold tracking-wider text-rose-300/60">
+              Atin&apos;s Collection (WMS)
+            </div>
+            {[
+              { key: "dashboard", label: "Dashboard" },
+              { key: "sales", label: "Sales & Delivery Order" },
+              { key: "inventory", label: "Katalog Persediaan" },
+              { key: "purchase", label: "Purchase & Receiving" },
+              { key: "reports", label: "Pusat Laporan Historis" },
+              { key: "settings", label: "Konfigurasi Sistem" },
+              ...(isRootAdmin ? [{ key: "human", label: "Manajemen Staf & Relasi" }] : []),
+            ].map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => {
+                  setCurrentTab(item.key as MainTab); setIsMobileMenuOpen(false);
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition ${
+                  currentTab === item.key ? "bg-[#9F1239] text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"
+                }`}
+              >
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
 
-        <div className="p-4 border-t border-[#4A1528]">
-          <button
-            type="button"
-            onClick={() => setIsLogoutConfirmOpen(true)}
-            className="w-full py-2 bg-[#881337] hover:bg-[#70102E] text-white text-xs font-semibold rounded-lg transition"
-          >
-            Keluar Akun
-          </button>
-        </div>
+          {/* Section B: Konter & PPOB Control Center (Versi Lengkap) */}
+            <div className="pt-2 border-t border-[#4A1528] space-y-1">
+              <div className="px-3 py-1 text-[10px] uppercase font-bold tracking-wider text-emerald-400/80 flex items-center justify-between">
+                <span>Operasional Konter</span>
+                <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">BCC</span>
+              </div>
+              {[
+                { id: "konter", label: "Dashboard Konter", icon: "📈" },
+                { id: "konter_stock", label: "Pengelolaan Stock", icon: "📦" },
+                { id: "konter_movement", label: "Stock Movement Log", icon: "🔄" },
+                { id: "konter_adjustment", label: "Stock Adjustment", icon: "⚖️" },
+                { id: "konter_po", label: "Purchase Order (PO)", icon: "📝" },
+                { id: "konter_receiving", label: "Penerimaan (Receiving)", icon: "📥" },
+                { id: "konter_sales_report", label: "Laporan Penjualan", icon: "📋" },
+                { id: "konter_stock_card", label: "Kartu Stock", icon: "🗂️" },
+                { id: "konter_cash_count", label: "Daily Cash Count", icon: "💰" },
+                { id: "konter_import", label: "Import Penjualan", icon: "⚡" },
+                { id: "konter_supplier", label: "Kelola Supplier", icon: "🤝" },
+              ].map((sub) => (
+                <button
+                  key={sub.id}
+                  type="button"
+                  onClick={() => {
+                    setCurrentTab(sub.id as any); setIsMobileMenuOpen(false);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition text-left ${
+                      currentTab === sub.id
+                        ? "bg-[#9F1239] text-white shadow-xs"
+                        : "text-rose-200 hover:bg-[#4A1528]"
+                    }`}
+                >
+                  <span>{sub.icon}</span>
+                  <span>{sub.label}</span>
+                </button>
+                              ))}
+            </div>
+          </nav>
       </aside>
+        {/* Backdrop overlay saat menu sidebar mobile terbuka */}
+        {isMobileMenuOpen && (
+          <div
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 md:hidden"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
 
-      {/* WORKSPACE CONTENT */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3.5 shadow-xs">
-          <button
-            type="button"
-            onClick={() => setIsMobileMenuOpen(true)}
-            className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 md:hidden"
-          >
-            Menu
-          </button>
+
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        {/* TOPBAR */}
+        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-6 py-4 flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+            {/* Tombol Hamburger 3 Garis (Mode Mobile) */}
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="inline-flex md:hidden items-center justify-center p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 mr-2"
+              aria-label="Toggle menu"
+            >
+              <div className="w-5 h-4 flex flex-col justify-between items-center">
+                <span className={`h-0.5 w-full bg-current rounded-full transition-all duration-300 ${isMobileMenuOpen ? "rotate-45 translate-y-1.5" : ""}`} />
+                <span className={`h-0.5 w-full bg-current rounded-full transition-all duration-300 ${isMobileMenuOpen ? "opacity-0" : ""}`} />
+                <span className={`h-0.5 w-full bg-current rounded-full transition-all duration-300 ${isMobileMenuOpen ? "-rotate-45 -translate-y-2" : ""}`} />
+              </div>
+            </button>
+
+            <h1 className="text-lg font-bold text-slate-900 tracking-tight">
               {currentTab === "dashboard" && "Dashboard Operasional Gudang"}
-              {currentTab === "sales" && "Manajemen Sales Order & Delivery Order"}
+              {currentTab === "sales" && "Manajemen Sales Order & DO"}
               {currentTab === "inventory" && "Katalog Persediaan & Stock Opname"}
               {currentTab === "purchase" && "Purchasing & Penerimaan Barang"}
-              {currentTab === "reports" && "Pusat Laporan Historis & Penjualan"}
-              {currentTab === "settings" && "Konfigurasi Perangkat & Toko"}
-              {currentTab === "human" && "Manajemen Staf, Vendor & Pelanggan"}
-            </h2>
-            <p className="text-[11px] text-slate-500">Database Firestore Realtime</p>
+              {currentTab === "reports" && "Pusat Laporan & Analitik"}
+              {currentTab === "settings" && "Pengaturan Sistem & Toko"}
+              {currentTab === "human" && "Manajemen Staf & Hak Akses"}
+              {(currentTab.startsWith("konter")) && "Modul Operasional Konter & PPOB"}
+            </h1>
+            <p className="text-xs text-slate-500">Database Firestore Realtime Connected</p>
           </div>
-          <div className="flex items-center gap-2.5">
-            <NotificationBell
-              currentUserId={currentUser.id}
-              currentUserName={currentUser.name}
-              onNavigateToDocument={(type) => {
-                if (type === "SO" || type === "DO") setCurrentTab("sales");
-                else if (type === "PO" || type === "RECEIVING") setCurrentTab("purchase");
-                else if (type === "SOP" || type === "ADJ") setCurrentTab("inventory");
-              }}
-              showAlert={showAlert}
-            />
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={loadAllData}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-medium border border-slate-200 transition"
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium border border-slate-200 transition"
             >
-              Sinkron Data
+              🔄 Refresh Data
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+            >
+              <span>🚪</span>
+              <span>Logout</span>
             </button>
           </div>
         </header>
 
-        <section className="flex-1 overflow-auto p-5">
-          {/* TAB 1: DASHBOARD */}
+        {/* CONTENT TABS */}
+        <main className="p-6 space-y-6 flex-1">
+          {/* SUB-MODUL OPERASIONAL KONTER (RENDER SESUAI MENU AKTIF) */}
+          {currentTab === "konter" && (
+            <div className="space-y-4">
+              <KonterDashboardView />
+            </div>
+          )}
+          {currentTab === "konter_stock" && (
+            <div className="space-y-4">
+              <KonterStockView />
+            </div>
+          )}
+          {currentTab === "konter_movement" && (
+            <div className="space-y-4">
+              <KonterMovementView />
+            </div>
+          )}
+          {currentTab === "konter_adjustment" && (
+            <div className="space-y-4">
+              <KonterAdjustmentView />
+            </div>
+          )}
+          {currentTab === "konter_po" && (
+            <div className="space-y-4">
+              <KonterPoView />
+            </div>
+          )}
+          {currentTab === "konter_receiving" && (
+            <div className="space-y-4">
+              <KonterReceivingView />
+            </div>
+          )}
+          {currentTab === "konter_sales_report" && (
+            <div className="space-y-4">
+              <KonterSalesReportView />
+            </div>
+          )}
+          {currentTab === "konter_stock_card" && (
+            <div className="space-y-4">
+              <KonterStockCardView />
+            </div>
+          )}
+          {currentTab === "konter_cash_count" && (
+            <div className="space-y-4">
+              <KonterCashCountView />
+            </div>
+          )}
+          {currentTab === "konter_import" && (
+            <div className="space-y-4">
+              <KonterImportView />
+            </div>
+          )}
+          {currentTab === "konter_supplier" && (
+            <div className="space-y-4">
+              <KonterSupplierView />
+            </div>
+          )}
+
+          {/* TAB 1: DASHBOARD OPERASIONAL */}
           {currentTab === "dashboard" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-                <div className="text-xs text-slate-500 font-medium">Total Master SKU</div>
-                <div className="text-2xl font-bold text-slate-900 mt-1">{products.length} SKU</div>
-              </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-                <div className="text-xs text-slate-500 font-medium">Total Saldo Fisik</div>
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+                  <div className="text-xs text-slate-500 font-medium">Total Saldo Fisik</div>
                 <div className="text-2xl font-bold text-emerald-700 mt-1">
                   {products.reduce((acc, p) => acc + Number(p.stock || 0), 0)} pcs
                 </div>
@@ -1519,6 +1670,7 @@ export default function DashboardClient() {
                   {salesOrders.filter((s) => s.status === "READY TO DELIVER").length} Dokumen
                 </div>
               </div>
+            </div>
             </div>
           )}
 
@@ -3122,7 +3274,7 @@ export default function DashboardClient() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {usersList.map((u, idx) => (
-                        <tr key={u.id || idx}>
+                        <tr key={`${u.id || u.userId || "user"}-${idx}`}>
                           <td className="p-2.5 font-mono font-bold text-slate-900">{u.staffId || `ST-${String(idx + 1).padStart(2, "0")}`}</td>
                           <td className="p-2.5 font-mono">{u.userId || u.username}</td>
                           <td className="p-2.5 font-semibold text-slate-900">{u.fullName || u.name}</td>
@@ -3251,9 +3403,9 @@ export default function DashboardClient() {
                 </div>
               )}
             </div>
-          )}
-        </section>
-      </main>
+            )}
+        </main>
+      </div>
 
       {/* MODAL DETAIL SALES ORDER (SO) */}
       {isSoDetailModalOpen && selectedSoDetail && (

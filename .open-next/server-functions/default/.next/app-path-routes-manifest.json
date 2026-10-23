@@ -14,5 +14,13 @@
   "/api/receiving/create/route": "/api/receiving/create",
   "/api/shipping/calculate/route": "/api/shipping/calculate",
   "/login/page": "/login",
+  "/konter/admin/page": "/konter/admin",
+  "/konter/dashboard/page": "/konter/dashboard",
+  "/konter/keuangan/page": "/konter/keuangan",
+  "/konter/laporan/page": "/konter/laporan",
+  "/konter/master/page": "/konter/master",
+  "/konter/page": "/konter",
+  "/konter/pengeluaran/page": "/konter/pengeluaran",
+  "/konter/transaksi/page": "/konter/transaksi",
   "/page": "/"
 }

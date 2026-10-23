@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /konter_products/{productId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    match /konter_stock_movements/{movementId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+    match /konter_stock_adjustments/{adjId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+    match /konter_purchase_orders/{poId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    match /konter_receivings/{rcvId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+    match /konter_sales/{saleId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    match /konter_daily_cash_counts/{countId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+  }
+}
