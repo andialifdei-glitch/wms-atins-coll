@@ -1,29 +1,49 @@
-﻿
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
+// ==============================================================
+// 1. INSTANCE DATABASE WMS & LOGIN USERS (gen-lang-client-0158803339)
+// ==============================================================
+const wmsFirebaseConfig = {
+  apiKey: "AIzaSyBZ8Re3MNW5It7lcLYPR0rNitlyumj7O-k",
   authDomain: "gen-lang-client-0158803339.firebaseapp.com",
   projectId: "gen-lang-client-0158803339",
-  storageBucket: "gen-lang-client-0158803339.appspot.com",
-  messagingSenderId:
-    process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
+  storageBucket: "gen-lang-client-0158803339.firebasestorage.app",
+  messagingSenderId: "165410314721",
+  appId: "1:165410314721:android:69031023b8527c5e66daa0",
 };
 
-const app = getApps().some((a) => a.name === "[DEFAULT]") ? getApp() : initializeApp(firebaseConfig);
+export const wmsApp = getApps().some((a) => a.name === "[DEFAULT]")
+  ? getApp("[DEFAULT]")
+  : initializeApp(wmsFirebaseConfig, "[DEFAULT]");
 
-const databaseId =
-  "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f";
+export const auth = getAuth(wmsApp);
 
-// Gunakan instance Firestore resmi; jangan mengembalikan objek {} saat SSR.
-export const db = getFirestore(app, databaseId);
+// Database Named khusus WMS & Users
+const wmsNamedDatabaseId = "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f";
+export const db = getFirestore(wmsApp, wmsNamedDatabaseId);
+export const userDb = db; // Alias untuk login/users
 
-export { app };
+// ==============================================================
+// 2. INSTANCE DATABASE OPERASIONAL KONTER (business-control-konter)
+// JANGAN DIUBAH KARENA SUDAH BERJALAN NORMAL
+// ==============================================================
+const konterFirebaseConfig = {
+  apiKey: "AIzaSyBKfhrqvjBRQkqf7dCAmmF995av8roITx4",
+  authDomain: "business-control-konter.firebaseapp.com",
+  projectId: "business-control-konter",
+  storageBucket: "business-control-konter.firebasestorage.app",
+  messagingSenderId: "1058397851047",
+  appId: "1:1058397851047:web:c6b20f077f46daeb9d3a82",
+};
 
-// Alias compatibility for merged konter module
+export const konterApp = getApps().some((a) => a.name === "konter-operational")
+  ? getApp("konter-operational")
+  : initializeApp(konterFirebaseConfig, "konter-operational");
 
-// Firestore instance untuk modul konter (mengarah ke database default)
-export const konterFirestore = getFirestore(app);
+// Firestore Operasional Konter
+export const konterFirestore = getFirestore(konterApp);
 
+// Fallback exports
+export const app = wmsApp;

@@ -1,28 +1,32 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export function middleware(request: NextRequest) {
-  const sessionCookie = request.cookies.get("admin_session")?.value;
   const { pathname } = request.nextUrl;
 
-  // Lewati static assets, API internal, dan file gambar
+  // 1. Lewati static assets, internal Next.js, API, dan file dengan ekstensi
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
-    pathname.startsWith("/favicon.ico")
+    pathname.includes(".") ||
+    pathname === "/favicon.ico"
   ) {
     return NextResponse.next();
   }
 
-  // Jika belum login dan mengakses halaman terproteksi selain /login
+  const sessionCookie = request.cookies.get("admin_session")?.value;
+
+  // 2. Proteksi rute selain /login jika belum ada session
   if (!sessionCookie && pathname !== "/login") {
-    const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
   }
 
-  // Jika sudah login dan mencoba mengakses halaman /login kembali
+  // 3. Jika sudah login dan membuka /login, arahkan ke dashboard
   if (sessionCookie && pathname === "/login") {
-    const dashboardUrl = new URL("/", request.url);
-    return NextResponse.redirect(dashboardUrl);
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url);
   }
 
   return NextResponse.next();
@@ -31,8 +35,8 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Proteksi semua route kecuali file statis Next.js dan favicon
+     * Hanya jalankan middleware pada rute halaman (bukan asset / file statis)
      */
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
   ],
 };

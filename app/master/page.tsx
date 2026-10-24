@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { operationalService } from "@/lib/operationalService";
 import type { KonterProduct, KonterProductFamily } from "@/lib/types";
+import { doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { konterFirestore, db } from "@/lib/firebase";
 import * as XLSX from "xlsx";
 
 export default function KonterMasterStockPage() {
@@ -10,11 +12,14 @@ export default function KonterMasterStockPage() {
   const [families, setFamilies] = useState<KonterProductFamily[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Search State untuk Produk
+  const [productSearch, setProductSearch] = useState("");
+
   // Modal Product State
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  
-  // State Form Produk dengan tambahan hppVoucher & kriteria fisik/jasa
+
+  // State Form Produk
   const [productForm, setProductForm] = useState({
     familyCode: "",
     sku: "",
@@ -23,7 +28,7 @@ export default function KonterMasterStockPage() {
     productCategory: "Umum",
     unit: "Pcs",
     hppVoucher: 0,
-    capitalPrice: 0, // HPP Modal
+    capitalPrice: 0,
     sellingPrice: 0,
     status: "AKTIF" as "AKTIF" | "NONAKTIF",
     currentStock: 0,
@@ -33,13 +38,27 @@ export default function KonterMasterStockPage() {
   // Modal Family CRUD State
   const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false);
   const [editingFamilyId, setEditingFamilyId] = useState<string | null>(null);
-  const [familyForm, setFamilyForm] = useState({ name: "", description: "" });
+  const [familyForm, setFamilyForm] = useState({ code: "", name: "", description: "" });
+  const [familySearch, setFamilySearch] = useState("");
 
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Helper Auto-generate Kode Family berikutnya (FAM-001, FAM-002, dst)
+  function getNextFamilyCode(list: KonterProductFamily[]) {
+    let maxNum = 0;
+    list.forEach((f) => {
+      const match = (f.code || "").match(/(?:FAM-?|FM-?)(\d+)/i);
+      if (match && match[1]) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+    return `FAM-${String(maxNum + 1).padStart(3, "0")}`;
+  }
 
   async function loadData() {
     setLoading(true);
@@ -52,6 +71,9 @@ export default function KonterMasterStockPage() {
       setFamilies(famData);
       if (famData.length > 0 && !productForm.familyCode) {
         setProductForm(prev => ({ ...prev, familyCode: famData[0].code }));
+      }
+      if (!editingFamilyId) {
+        setFamilyForm({ code: getNextFamilyCode(famData), name: "", description: "" });
       }
     } catch (err: any) {
       setMsg({ type: "error", text: "Gagal memuat data: " + err.message });
@@ -72,7 +94,6 @@ export default function KonterMasterStockPage() {
     }
   }
 
-  // Handle perubahan Kategori (Fisik / Jasa)
   function handleStockCategoryChange(category: "FISIK" | "JASA") {
     if (category === "JASA") {
       setProductForm(prev => ({
@@ -116,7 +137,6 @@ export default function KonterMasterStockPage() {
     setIsProductModalOpen(true);
   }
 
-  // Submit dengan Konfirmasi Preview dalam Alert sebelum OK
   async function handlePreSubmitProduct(e: React.FormEvent) {
     e.preventDefault();
 
@@ -146,16 +166,42 @@ Apakah data produk di atas sudah benar?`;
     }
   }
 
+  // Simpan / Update Family (CRUD)
   async function handleSaveFamily(e: React.FormEvent) {
     e.preventDefault();
     if (!familyForm.name.trim()) return;
     try {
       if (editingFamilyId) {
-        await operationalService.updateFamily(editingFamilyId, familyForm.name, familyForm.description);
+        // Coba operationalService dengan code, fallback direct firestore update
+        if (typeof (operationalService as any).updateFamily === "function") {
+          try {
+            await (operationalService as any).updateFamily(editingFamilyId, familyForm.name, familyForm.description, familyForm.code);
+          } catch {
+            const targetDb = konterFirestore || db;
+            await updateDoc(doc(targetDb, "konter_families", editingFamilyId), {
+              code: familyForm.code,
+              name: familyForm.name,
+              description: familyForm.description || "",
+              updatedAt: new Date().toISOString()
+            });
+          }
+        }
       } else {
-        await operationalService.createFamily(familyForm.name, familyForm.description);
+        if (typeof (operationalService as any).createFamily === "function") {
+          try {
+            await (operationalService as any).createFamily(familyForm.name, familyForm.description, familyForm.code);
+          } catch {
+            const targetDb = konterFirestore || db;
+            const { addDoc, collection } = await import("firebase/firestore");
+            await addDoc(collection(targetDb, "konter_families"), {
+              code: familyForm.code,
+              name: familyForm.name,
+              description: familyForm.description || "",
+              createdAt: new Date().toISOString()
+            });
+          }
+        }
       }
-      setFamilyForm({ name: "", description: "" });
       setEditingFamilyId(null);
       await loadData();
       alert("Family berhasil disimpan.");
@@ -167,19 +213,48 @@ Apakah data produk di atas sudah benar?`;
   async function handleDeleteFamily(id: string) {
     if (!confirm("Yakin ingin menghapus family ini?")) return;
     try {
-      await operationalService.deleteFamily(id);
+      if (typeof (operationalService as any).deleteFamily === "function") {
+        await operationalService.deleteFamily(id);
+      } else {
+        const targetDb = konterFirestore || db;
+        await deleteDoc(doc(targetDb, "konter_families", id));
+      }
       await loadData();
     } catch (err: any) {
       alert("Gagal menghapus family: " + err.message);
     }
   }
 
+  // Filter Produk Berdasarkan Search Box
+  const filteredProducts = useMemo(() => {
+    const q = productSearch.toLowerCase().trim();
+    if (!q) return products;
+    return products.filter((p) =>
+      (p.sku || "").toLowerCase().includes(q) ||
+      (p.name || "").toLowerCase().includes(q) ||
+      (p.familyCode || "").toLowerCase().includes(q) ||
+      (p.stockCategory || "").toLowerCase().includes(q) ||
+      (p.status || "").toLowerCase().includes(q)
+    );
+  }, [products, productSearch]);
+
+  // Filter Family di Dalam Modal CRUD
+  const filteredFamilies = useMemo(() => {
+    const q = familySearch.toLowerCase().trim();
+    if (!q) return families;
+    return families.filter((f) =>
+      (f.code || "").toLowerCase().includes(q) ||
+      (f.name || "").toLowerCase().includes(q) ||
+      (f.description || "").toLowerCase().includes(q)
+    );
+  }, [families, familySearch]);
+
   function handleExportProductsXlsx() {
-    if (products.length === 0) {
+    if (filteredProducts.length === 0) {
       alert("Tidak ada data produk.");
       return;
     }
-    const data = products.map((p, idx) => ({
+    const data = filteredProducts.map((p, idx) => ({
       "No": idx + 1,
       "SKU": p.sku,
       "Nama Produk": p.name,
@@ -199,16 +274,16 @@ Apakah data produk di atas sudah benar?`;
 
   function handleDownloadProductTemplate() {
     const templateData = [
-      { 
-        "Family (Kode/Nama)": "FAM-001", 
-        "Nama Produk": "Pulsa Telkomsel 10k", 
+      {
+        "Family (Kode/Nama)": "FAM-001",
+        "Nama Produk": "Pulsa Telkomsel 10k",
         "Kategori (FISIK/JASA)": "FISIK",
-        "Satuan": "Pcs", 
+        "Satuan": "Pcs",
         "HPP Voucher": 10000,
-        "Harga Modal": 10200, 
-        "Harga Jual": 12000, 
-        "Stok Awal": 50, 
-        "Status": "AKTIF" 
+        "Harga Modal": 10200,
+        "Harga Jual": 12000,
+        "Stok Awal": 50,
+        "Status": "AKTIF"
       }
     ];
     const ws = XLSX.utils.json_to_sheet(templateData);
@@ -285,8 +360,12 @@ Apakah data produk di atas sudah benar?`;
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => setIsFamilyModalOpen(true)}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg shadow-sm transition"
+            onClick={() => {
+              setEditingFamilyId(null);
+              setFamilyForm({ code: getNextFamilyCode(families), name: "", description: "" });
+              setIsFamilyModalOpen(true);
+            }}
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg shadow-sm transition flex items-center gap-1.5"
           >
             ⚙️ Kelola Family (CRUD)
           </button>
@@ -305,18 +384,43 @@ Apakah data produk di atas sudah benar?`;
         </div>
       )}
 
-      {/* Tabel Produk */}
+      {/* Tabel Produk dengan Search Box */}
       <div className="bg-white rounded-xl border border-rose-100 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-rose-100 font-bold text-slate-900 flex justify-between items-center">
-          <span>Daftar Katalog Produk &amp; Stok</span>
-          <span className="text-xs text-slate-500 font-normal">Total Produk: {products.length}</span>
+        <div className="p-4 border-b border-rose-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-900">Daftar Katalog Produk &amp; Stok</span>
+            <span className="text-xs bg-rose-50 text-[#BE185D] px-2 py-0.5 rounded-full font-bold">
+              Total: {filteredProducts.length} {productSearch && `(dari ${products.length})`}
+            </span>
+          </div>
+
+          {/* Kolom Pencarian Produk Cepat */}
+          <div className="w-full md:w-80 relative">
+            <input
+              type="text"
+              placeholder="🔍 Cari nama produk, SKU, atau family..."
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              className="w-full pl-3 pr-8 py-2 border rounded-lg outline-none focus:border-[#BE185D] bg-white text-xs"
+            />
+            {productSearch && (
+              <button
+                onClick={() => setProductSearch("")}
+                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 font-bold"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-rose-100 text-slate-900 font-bold">
                 <th className="p-3">SKU</th>
                 <th className="p-3">Nama Produk</th>
+                <th className="p-3">Family</th>
                 <th className="p-3">Kategori</th>
                 <th className="p-3 text-right">Stok</th>
                 <th className="p-3 text-right">HPP Modal</th>
@@ -327,14 +431,19 @@ Apakah data produk di atas sudah benar?`;
             </thead>
             <tbody className="divide-y divide-rose-50 text-slate-900 font-medium">
               {loading ? (
-                <tr><td colSpan={8} className="p-6 text-center text-slate-400">Memuat data produk...</td></tr>
-              ) : products.length === 0 ? (
-                <tr><td colSpan={8} className="p-6 text-center text-slate-400">Belum ada data produk.</td></tr>
+                <tr><td colSpan={9} className="p-6 text-center text-slate-400">Memuat data produk...</td></tr>
+              ) : filteredProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="p-6 text-center text-slate-400">
+                    {productSearch ? `Tidak ada produk yang cocok dengan "${productSearch}".` : "Belum ada data produk."}
+                  </td>
+                </tr>
               ) : (
-                products.map(p => (
+                filteredProducts.map(p => (
                   <tr key={p.id} className="hover:bg-rose-50/20">
                     <td className="p-3 font-mono font-bold text-[#BE185D]">{p.sku}</td>
                     <td className="p-3 font-bold">{p.name}</td>
+                    <td className="p-3 font-mono text-slate-600">{p.familyCode || "-"}</td>
                     <td className="p-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.stockCategory === "FISIK" ? "bg-purple-100 text-purple-900" : "bg-blue-100 text-blue-900"}`}>
                         {p.stockCategory || "FISIK"}
@@ -549,7 +658,7 @@ Apakah data produk di atas sudah benar?`;
         </div>
       )}
 
-      {/* Modal CRUD Family */}
+      {/* Modal CRUD Family dengan Auto-Code dan Fitur Edit Lengkap */}
       {isFamilyModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-2xl border border-rose-100 w-full max-w-3xl p-6 text-slate-900 max-h-[90vh] overflow-y-auto space-y-5">
@@ -569,11 +678,26 @@ Apakah data produk di atas sudah benar?`;
               </div>
             </div>
 
+            {/* Form Tambah / Edit Family */}
             <form onSubmit={handleSaveFamily} className="p-4 bg-slate-50 border rounded-xl space-y-3">
-              <h3 className="text-xs font-bold text-slate-900">{editingFamilyId ? "Edit Family" : "+ Tambah Family Baru"}</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <h3 className="text-xs font-bold text-slate-900">
+                {editingFamilyId ? "✏️ Edit Family Terdaftar" : "+ Tambah Family Baru (Kode Ter-generate Otomatis)"}
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-semibold mb-1">Nama Family</label>
+                  <label className="block font-semibold mb-1">
+                    Kode Family <span className="text-slate-400 font-normal">({editingFamilyId ? "Bisa Diedit" : "Otomatis"})</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={familyForm.code}
+                    onChange={(e) => setFamilyForm({ ...familyForm, code: e.target.value })}
+                    className="w-full p-2 border rounded-lg font-mono font-bold bg-white text-[#BE185D]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Nama Family <span className="text-rose-600">*</span></label>
                   <input
                     type="text"
                     required
@@ -598,7 +722,10 @@ Apakah data produk di atas sudah benar?`;
                 {editingFamilyId && (
                   <button
                     type="button"
-                    onClick={() => { setEditingFamilyId(null); setFamilyForm({ name: "", description: "" }); }}
+                    onClick={() => {
+                      setEditingFamilyId(null);
+                      setFamilyForm({ code: getNextFamilyCode(families), name: "", description: "" });
+                    }}
                     className="px-3 py-1.5 border rounded"
                   >
                     Batal Edit
@@ -613,47 +740,65 @@ Apakah data produk di atas sudah benar?`;
               </div>
             </form>
 
-            <div className="border rounded-lg overflow-hidden">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-100 border-b font-bold text-slate-700">
-                    <th className="p-2.5">Kode</th>
-                    <th className="p-2.5">Nama Family</th>
-                    <th className="p-2.5">Deskripsi</th>
-                    <th className="p-2.5 text-center">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {families.length === 0 ? (
-                    <tr><td colSpan={4} className="p-5 text-center text-slate-400">Belum ada data family.</td></tr>
-                  ) : (
-                    families.map(f => (
-                      <tr key={f.id} className="hover:bg-slate-50">
-                        <td className="p-2.5 font-mono font-bold text-[#BE185D]">{f.code}</td>
-                        <td className="p-2.5 font-bold">{f.name}</td>
-                        <td className="p-2.5 text-slate-600">{f.description || "-"}</td>
-                        <td className="p-2.5 text-center space-x-2">
-                          <button
-                            onClick={() => {
-                              setEditingFamilyId(f.id!);
-                              setFamilyForm({ name: f.name, description: f.description || "" });
-                            }}
-                            className="px-2 py-1 bg-slate-800 text-white font-bold rounded"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDeleteFamily(f.id!)}
-                            className="px-2 py-1 bg-rose-600 text-white font-bold rounded"
-                          >
-                            Hapus
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+            {/* Pencarian dan Tabel Family */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-slate-700">Daftar Family ({filteredFamilies.length})</span>
+                <input
+                  type="text"
+                  placeholder="🔍 Cari family..."
+                  value={familySearch}
+                  onChange={(e) => setFamilySearch(e.target.value)}
+                  className="px-2.5 py-1 border rounded-lg text-xs w-48 bg-white"
+                />
+              </div>
+
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 border-b font-bold text-slate-700">
+                      <th className="p-2.5 w-28">Kode</th>
+                      <th className="p-2.5">Nama Family</th>
+                      <th className="p-2.5">Deskripsi</th>
+                      <th className="p-2.5 text-center w-32">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredFamilies.length === 0 ? (
+                      <tr><td colSpan={4} className="p-5 text-center text-slate-400">Belum ada data family.</td></tr>
+                    ) : (
+                      filteredFamilies.map(f => (
+                        <tr key={f.id} className="hover:bg-slate-50">
+                          <td className="p-2.5 font-mono font-bold text-[#BE185D]">{f.code || "-"}</td>
+                          <td className="p-2.5 font-bold">{f.name}</td>
+                          <td className="p-2.5 text-slate-600">{f.description || "-"}</td>
+                          <td className="p-2.5 text-center space-x-2">
+                            <button
+                              onClick={() => {
+                                setEditingFamilyId(f.id!);
+                                setFamilyForm({
+                                  code: f.code || "",
+                                  name: f.name || "",
+                                  description: f.description || ""
+                                });
+                              }}
+                              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteFamily(f.id!)}
+                              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded"
+                            >
+                              Hapus
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

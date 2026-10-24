@@ -27,96 +27,85 @@
       }
     }
   },
-  "/konter/admin": {
+  "/adjustment": {
     "hints": 64,
     "slots": {
       "children": {
         "hints": 96,
         "slots": {
           "children": {
-            "hints": 96,
-            "slots": {
-              "children": {
-                "hints": 160,
-                "slots": null
-              }
-            }
+            "hints": 160,
+            "slots": null
           }
         }
       }
     }
   },
-  "/konter/dashboard": {
+  "/admin": {
     "hints": 64,
     "slots": {
       "children": {
         "hints": 96,
         "slots": {
           "children": {
-            "hints": 96,
-            "slots": {
-              "children": {
-                "hints": 160,
-                "slots": null
-              }
-            }
+            "hints": 160,
+            "slots": null
           }
         }
       }
     }
   },
-  "/konter/keuangan": {
+  "/cash-count": {
     "hints": 64,
     "slots": {
       "children": {
         "hints": 96,
         "slots": {
           "children": {
-            "hints": 96,
-            "slots": {
-              "children": {
-                "hints": 160,
-                "slots": null
-              }
-            }
+            "hints": 160,
+            "slots": null
           }
         }
       }
     }
   },
-  "/konter/laporan": {
+  "/dashboard": {
     "hints": 64,
     "slots": {
       "children": {
         "hints": 96,
         "slots": {
           "children": {
-            "hints": 96,
-            "slots": {
-              "children": {
-                "hints": 160,
-                "slots": null
-              }
-            }
+            "hints": 160,
+            "slots": null
           }
         }
       }
     }
   },
-  "/konter/master": {
+  "/import-sales": {
     "hints": 64,
     "slots": {
       "children": {
         "hints": 96,
         "slots": {
           "children": {
-            "hints": 96,
-            "slots": {
-              "children": {
-                "hints": 160,
-                "slots": null
-              }
-            }
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/keuangan": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
           }
         }
       }
@@ -136,45 +125,326 @@
       }
     }
   },
-  "/konter/pengeluaran": {
+  "/laporan": {
     "hints": 64,
     "slots": {
       "children": {
         "hints": 96,
         "slots": {
           "children": {
-            "hints": 96,
-            "slots": {
-              "children": {
-                "hints": 160,
-                "slots": null
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "/konter/transaksi": {
-    "hints": 64,
-    "slots": {
-      "children": {
-        "hints": 96,
-        "slots": {
-          "children": {
-            "hints": 96,
-            "slots": {
-              "children": {
-                "hints": 160,
-                "slots": null
-              }
-            }
+            "hints": 160,
+            "slots": null
           }
         }
       }
     }
   },
   "/login": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/master/family": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 96,
+            "slots": {
+              "children": {
+                "hints": 160,
+                "slots": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/master": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/movement": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 160,
+        "slots": null
+      }
+    }
+  },
+  "/pengeluaran": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/po-report": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/po": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/purchase": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/receiving-report": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/receiving": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/reports/adjustment": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 96,
+            "slots": {
+              "children": {
+                "hints": 160,
+                "slots": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/reports/card": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 96,
+            "slots": {
+              "children": {
+                "hints": 160,
+                "slots": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/reports/po": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 96,
+            "slots": {
+              "children": {
+                "hints": 160,
+                "slots": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/reports/receiving": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 96,
+            "slots": {
+              "children": {
+                "hints": 160,
+                "slots": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/reports/stock": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 96,
+            "slots": {
+              "children": {
+                "hints": 160,
+                "slots": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/sales-report": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/stock-card": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/stock-report": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/suppliers": {
+    "hints": 64,
+    "slots": {
+      "children": {
+        "hints": 96,
+        "slots": {
+          "children": {
+            "hints": 160,
+            "slots": null
+          }
+        }
+      }
+    }
+  },
+  "/transaksi": {
     "hints": 64,
     "slots": {
       "children": {

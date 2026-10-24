@@ -1,0 +1,9 @@
+{
+  "firestore": [
+    {
+      "target": "wms_db",
+      "database": "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f",
+      "rules": "firestore.rules"
+    }
+  ]
+}

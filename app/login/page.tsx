@@ -1,7 +1,26 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { userDb as db } from "@/lib/firebase";
+
+async function sha256Hex(message: string): Promise<string> {
+  if (typeof crypto !== "undefined" && crypto.subtle) {
+    const msgUint8 = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return message;
+}
+
+function normalizeRole(rawRole: string): "ROOT_ADMIN" | "ADMIN_GUDANG" | "STAFF_GUDANG" {
+  const r = (rawRole || "").trim().toUpperCase();
+  if (r.includes("ROOT") || r === "ADMIN" || r === "SUPER ADMIN") return "ROOT_ADMIN";
+  if (r.includes("ADMIN") || r.includes("GUDANG_ADMIN")) return "ADMIN_GUDANG";
+  return "STAFF_GUDANG";
+}
 
 export default function LoginPage() {
   const [userId, setUserId] = useState("");
@@ -16,25 +35,116 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: userId.trim(), password: password.trim() }),
-      });
+      const rawInput = userId.trim();
+      const inputPass = password.trim();
 
-      const result = await res.json();
-
-      if (res.ok && result.success) {
-        if (result.data) {
-          localStorage.setItem("wms_user_session", JSON.stringify(result.data));
-        }
-        router.push("/");
-        router.refresh();
-      } else {
-        setErrorMsg(result.message || "Autentikasi gagal. Periksa User ID dan Password Anda.");
+      if (!rawInput || !inputPass) {
+        setErrorMsg("User ID dan Password wajib diisi.");
+        setLoading(false);
+        return;
       }
-    } catch {
-      setErrorMsg("Gagal terhubung ke server. Periksa koneksi internet Anda.");
+
+      const cleanInput = rawInput.includes("@") ? rawInput.split("@")[0] : rawInput;
+      const lowerInput = cleanInput.toLowerCase();
+
+      let userData: any = null;
+      let finalDocId = lowerInput;
+
+      // 1. Cek langsung ke Firestore via browser
+      try {
+        const docRef = doc(db, "users", lowerInput);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          userData = docSnap.data();
+          finalDocId = docSnap.id;
+        }
+      } catch (e) {
+        console.warn("Direct doc read warning:", e);
+      }
+
+      // 2. Jika tidak ada, cari via query field
+      if (!userData) {
+        const usersCol = collection(db, "users");
+        const fields = ["userId", "username", "email"];
+        for (const f of fields) {
+          try {
+            const q = query(usersCol, where(f, "==", lowerInput));
+            const qSnap = await getDocs(q);
+            if (!qSnap.empty) {
+              userData = qSnap.docs[0].data();
+              finalDocId = qSnap.docs[0].id;
+              break;
+            }
+          } catch {}
+        }
+      }
+
+      // 3. Cek dengan casing asli jika ada perbedaan huruf besar/kecil
+      if (!userData && cleanInput !== lowerInput) {
+        try {
+          const docRef = doc(db, "users", cleanInput);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            userData = docSnap.data();
+            finalDocId = docSnap.id;
+          }
+        } catch {}
+      }
+
+      if (!userData) {
+        setErrorMsg("Pengguna tidak ditemukan. Periksa kembali User ID Anda.");
+        setLoading(false);
+        return;
+      }
+
+      if (userData.active === false) {
+        setErrorMsg("Akun dinonaktifkan. Hubungi Administrator.");
+        setLoading(false);
+        return;
+      }
+
+      // 4. Verifikasi Password (Plain text atau SHA-256)
+      const storedPass = String(userData.password || "");
+      let isMatch = false;
+
+      if (storedPass === inputPass) {
+        isMatch = true;
+      } else {
+        const hashed = await sha256Hex(inputPass);
+        if (hashed.toLowerCase() === storedPass.toLowerCase()) {
+          isMatch = true;
+        }
+      }
+
+      if (!isMatch) {
+        setErrorMsg("Kombinasi User ID dan Password tidak sah.");
+        setLoading(false);
+        return;
+      }
+
+      // 5. Buat Sesi Pengguna
+      const uId = userData.userId || userData.username || finalDocId;
+      const sessionPayload = {
+        uid: userData.uid || finalDocId,
+        id: uId,
+        email: userData.email || `${uId}@wms.atinscollection.com`,
+        role: normalizeRole(userData.role || ""),
+        name: userData.fullName || userData.name || uId,
+      };
+
+      // Simpan session di LocalStorage
+      localStorage.setItem("wms_user_session", JSON.stringify(sessionPayload));
+
+      // Simpan session di Cookie agar middleware/SSR rute lain mendeteksi user sudah login
+      const sessionString = encodeURIComponent(JSON.stringify(sessionPayload));
+      document.cookie = `admin_session=${sessionString}; path=/; max-age=86400; SameSite=Lax`;
+
+      // Redirect ke Dashboard Utama
+      router.push("/");
+      router.refresh();
+    } catch (err: any) {
+      console.error("Login Error:", err);
+      setErrorMsg("Gagal melakukan login: " + (err.message || "Koneksi bermasalah"));
     } finally {
       setLoading(false);
     }

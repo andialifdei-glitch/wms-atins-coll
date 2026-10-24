@@ -48,6 +48,18 @@
       "namedRegex": "^/\\.well\\-known/appspecific/com\\.chrome\\.devtools\\.json(?:/)?$"
     },
     {
+      "page": "/adjustment",
+      "regex": "^/adjustment(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/adjustment(?:/)?$"
+    },
+    {
+      "page": "/admin",
+      "regex": "^/admin(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin(?:/)?$"
+    },
+    {
       "page": "/api/admin/sanitize-passwords",
       "regex": "^/api/admin/sanitize\\-passwords(?:/)?$",
       "routeKeys": {},
@@ -108,10 +120,34 @@
       "namedRegex": "^/api/suppliers(?:/)?$"
     },
     {
+      "page": "/cash-count",
+      "regex": "^/cash\\-count(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cash\\-count(?:/)?$"
+    },
+    {
+      "page": "/dashboard",
+      "regex": "^/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard(?:/)?$"
+    },
+    {
       "page": "/favicon.ico",
       "regex": "^/favicon\\.ico(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/favicon\\.ico(?:/)?$"
+    },
+    {
+      "page": "/import-sales",
+      "regex": "^/import\\-sales(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/import\\-sales(?:/)?$"
+    },
+    {
+      "page": "/keuangan",
+      "regex": "^/keuangan(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/keuangan(?:/)?$"
     },
     {
       "page": "/konter",
@@ -120,52 +156,130 @@
       "namedRegex": "^/konter(?:/)?$"
     },
     {
-      "page": "/konter/admin",
-      "regex": "^/konter/admin(?:/)?$",
+      "page": "/laporan",
+      "regex": "^/laporan(?:/)?$",
       "routeKeys": {},
-      "namedRegex": "^/konter/admin(?:/)?$"
-    },
-    {
-      "page": "/konter/dashboard",
-      "regex": "^/konter/dashboard(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/konter/dashboard(?:/)?$"
-    },
-    {
-      "page": "/konter/keuangan",
-      "regex": "^/konter/keuangan(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/konter/keuangan(?:/)?$"
-    },
-    {
-      "page": "/konter/laporan",
-      "regex": "^/konter/laporan(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/konter/laporan(?:/)?$"
-    },
-    {
-      "page": "/konter/master",
-      "regex": "^/konter/master(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/konter/master(?:/)?$"
-    },
-    {
-      "page": "/konter/pengeluaran",
-      "regex": "^/konter/pengeluaran(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/konter/pengeluaran(?:/)?$"
-    },
-    {
-      "page": "/konter/transaksi",
-      "regex": "^/konter/transaksi(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/konter/transaksi(?:/)?$"
+      "namedRegex": "^/laporan(?:/)?$"
     },
     {
       "page": "/login",
       "regex": "^/login(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/master",
+      "regex": "^/master(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/master(?:/)?$"
+    },
+    {
+      "page": "/master/family",
+      "regex": "^/master/family(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/master/family(?:/)?$"
+    },
+    {
+      "page": "/movement",
+      "regex": "^/movement(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/movement(?:/)?$"
+    },
+    {
+      "page": "/pengeluaran",
+      "regex": "^/pengeluaran(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/pengeluaran(?:/)?$"
+    },
+    {
+      "page": "/po",
+      "regex": "^/po(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/po(?:/)?$"
+    },
+    {
+      "page": "/po-report",
+      "regex": "^/po\\-report(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/po\\-report(?:/)?$"
+    },
+    {
+      "page": "/purchase",
+      "regex": "^/purchase(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/purchase(?:/)?$"
+    },
+    {
+      "page": "/receiving",
+      "regex": "^/receiving(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/receiving(?:/)?$"
+    },
+    {
+      "page": "/receiving-report",
+      "regex": "^/receiving\\-report(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/receiving\\-report(?:/)?$"
+    },
+    {
+      "page": "/reports/adjustment",
+      "regex": "^/reports/adjustment(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/reports/adjustment(?:/)?$"
+    },
+    {
+      "page": "/reports/card",
+      "regex": "^/reports/card(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/reports/card(?:/)?$"
+    },
+    {
+      "page": "/reports/po",
+      "regex": "^/reports/po(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/reports/po(?:/)?$"
+    },
+    {
+      "page": "/reports/receiving",
+      "regex": "^/reports/receiving(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/reports/receiving(?:/)?$"
+    },
+    {
+      "page": "/reports/stock",
+      "regex": "^/reports/stock(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/reports/stock(?:/)?$"
+    },
+    {
+      "page": "/sales-report",
+      "regex": "^/sales\\-report(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/sales\\-report(?:/)?$"
+    },
+    {
+      "page": "/stock-card",
+      "regex": "^/stock\\-card(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/stock\\-card(?:/)?$"
+    },
+    {
+      "page": "/stock-report",
+      "regex": "^/stock\\-report(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/stock\\-report(?:/)?$"
+    },
+    {
+      "page": "/suppliers",
+      "regex": "^/suppliers(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/suppliers(?:/)?$"
+    },
+    {
+      "page": "/transaksi",
+      "regex": "^/transaksi(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/transaksi(?:/)?$"
     }
   ],
   "dataRoutes": [],
