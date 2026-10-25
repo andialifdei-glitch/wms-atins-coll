@@ -33,6 +33,7 @@ export default function BCCSidebar({ activeTabWms, onSelectWmsTab }: BCCSidebarP
     { id: "dashboard", label: "Dashboard Konter", href: "/dashboard" },
     { id: "transaksi", label: "Riwayat Transaksi", href: "/transaksi" },
     { id: "master", label: "Master Data", href: "/master" },
+    { id: "stock-opname", label: "Stock Opname (SOP)", href: "/stock-opname" },
     { id: "keuangan", label: "Keuangan & Saldo", href: "/keuangan" },
     { id: "pengeluaran", label: "Pengeluaran", href: "/pengeluaran" },
     { id: "laporan", label: "Laporan & Analitik", href: "/laporan" },
@@ -58,7 +59,7 @@ export default function BCCSidebar({ activeTabWms, onSelectWmsTab }: BCCSidebarP
                 : "text-slate-300 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <span>📊</span>
+            <span> </span>
             <span>Dashboard Utama</span>
           </Link>
         </div>
@@ -71,11 +72,11 @@ export default function BCCSidebar({ activeTabWms, onSelectWmsTab }: BCCSidebarP
             className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
           >
             <div className="flex items-center gap-2">
-              <span className="text-rose-400">📦</span>
+              <span className="text-rose-400">
               <span className="font-semibold text-rose-300">Atin&apos;s Collection</span>
             </div>
             <span className={`text-xs text-slate-400 transform transition-transform ${openWms ? "rotate-180" : ""}`}>
-              ▼
+              
             </span>
           </button>
 
@@ -122,11 +123,11 @@ export default function BCCSidebar({ activeTabWms, onSelectWmsTab }: BCCSidebarP
             className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
           >
             <div className="flex items-center gap-2">
-              <span className="text-emerald-400">⚡</span>
+              <span className="text-emerald-400">
               <span className="font-semibold text-emerald-300">Konter & PPOB</span>
             </div>
             <span className={`text-xs text-slate-400 transform transition-transform ${openKonter ? "rotate-180" : ""}`}>
-              ▼
+              
             </span>
           </button>
 

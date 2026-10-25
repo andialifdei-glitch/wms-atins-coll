@@ -202,7 +202,7 @@ export default function KonterFamilyPage() {
           onClick={handleExportXlsx}
           className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm transition flex items-center gap-2 self-start md:self-auto"
         >
-          <span>📥 Ekspor ke XLSX</span>
+          <span> Ekspor ke XLSX</span>
         </button>
       </div>
 
@@ -216,7 +216,7 @@ export default function KonterFamilyPage() {
         >
           <span>{msg.text}</span>
           <button onClick={() => setMsg(null)} className="font-bold ml-4 text-slate-400 hover:text-slate-600">
-            ✕
+            
           </button>
         </div>
       )}
@@ -286,7 +286,7 @@ export default function KonterFamilyPage() {
           <div className="w-full md:w-72 relative">
             <input
               type="text"
-              placeholder="🔍 Cari kode, nama, atau deskripsi..."
+              placeholder=" Cari kode, nama, atau deskripsi..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-3 pr-8 py-2 border rounded-lg outline-none focus:border-[#BE185D] bg-white text-xs"
@@ -296,7 +296,7 @@ export default function KonterFamilyPage() {
                 onClick={() => setSearchQuery("")}
                 className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 font-bold"
               >
-                ✕
+                
               </button>
             )}
           </div>
@@ -345,13 +345,13 @@ export default function KonterFamilyPage() {
                           onClick={() => handleOpenEdit(f)}
                           className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded border border-amber-200 transition"
                         >
-                          ✏️ Edit
+                           Edit
                         </button>
                         <button
                           onClick={() => handleDeleteFamily(f.id, f.name)}
                           className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded border border-red-200 transition"
                         >
-                          🗑️
+                          
                         </button>
                       </div>
                     </td>
@@ -368,12 +368,12 @@ export default function KonterFamilyPage() {
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-rose-100 space-y-4">
             <div className="flex justify-between items-center border-b border-rose-100 pb-3">
-              <h3 className="text-sm font-bold text-slate-900">✏️ Edit Family Produk</h3>
+              <h3 className="text-sm font-bold text-slate-900"> Edit Family Produk</h3>
               <button
                 onClick={() => setEditItem(null)}
                 className="text-slate-400 hover:text-slate-600 font-bold text-base"
               >
-                ✕
+                
               </button>
             </div>
 
@@ -381,12 +381,12 @@ export default function KonterFamilyPage() {
               <div>
                 <label className="block font-semibold mb-1">Kode Family</label>
                 <input
-                  type="text"
-                  required
-                  value={editCode}
-                  onChange={(e) => setEditCode(e.target.value)}
-                  className="w-full p-2 border rounded-lg font-mono font-bold bg-slate-50 outline-none focus:border-[#BE185D]"
-                />
+                    type="text"
+                    readOnly
+                    disabled
+                    value={editCode}
+                    className="w-full p-2 border rounded-lg font-mono font-bold bg-slate-100 text-slate-500 cursor-not-allowed outline-none"
+                  />
               </div>
 
               <div>

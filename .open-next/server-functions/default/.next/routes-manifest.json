@@ -264,6 +264,12 @@
       "namedRegex": "^/stock\\-card(?:/)?$"
     },
     {
+      "page": "/stock-opname",
+      "regex": "^/stock\\-opname(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/stock\\-opname(?:/)?$"
+    },
+    {
       "page": "/stock-report",
       "regex": "^/stock\\-report(?:/)?$",
       "routeKeys": {},

@@ -8,186 +8,46 @@ import {
   deleteDoc,
   query,
   where,
-  orderBy,
-  limit,
   serverTimestamp,
   writeBatch
 } from "firebase/firestore";
 import { konterFirestore } from "./firebase";
 import type { KonterProduct, KonterProductFamily } from "./types";
 
+function generateDateDocCode(prefix: string): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const rand = Math.floor(100 + Math.random() * 900);
+  return `${prefix}-${y}${m}${d}-${rand}`;
+}
+
 export const operationalService = {
-  // ================= 1. MASTER PRODUCTS =================
-  async getProducts(): Promise<KonterProduct[]> {
-    try {
-      const snap = await getDocs(collection(konterFirestore, "konter_products"));
-      return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-    } catch (e) {
-      console.warn("Gagal getProducts:", e);
-      return [];
-    }
-  },
 
-  async saveProduct(product: Partial<KonterProduct>, id?: string): Promise<string> {
-    const payload: any = {
-      ...product,
-      updatedAt: serverTimestamp(),
-    };
-    if (id) {
-      await updateDoc(doc(konterFirestore, "konter_products", id), payload);
-      return id;
-    } else {
-      payload.createdAt = serverTimestamp();
-      const res = await addDoc(collection(konterFirestore, "konter_products"), payload);
-      return res.id;
-    }
-  },
-
-  async deleteProduct(id: string): Promise<void> {
-    await deleteDoc(doc(konterFirestore, "konter_products", id));
-  },
-
-  async generateNextSKU(familyCode: string): Promise<string> {
-    try {
-      const q = query(
-        collection(konterFirestore, "konter_products"),
-        where("familyCode", "==", familyCode)
-      );
-      const snap = await getDocs(q);
-      const cleanFam = familyCode.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-      let maxNum = 0;
-      snap.docs.forEach((d) => {
-        const sku = (d.data().sku || "") as string;
-        const match = sku.match(/(\d+)$/);
-        if (match && match[1]) {
-          const num = parseInt(match[1], 10);
-          if (num > maxNum) maxNum = num;
-        }
-      });
-      return `${cleanFam}-${String(maxNum + 1).padStart(3, "0")}`;
-    } catch (e) {
-      return `${familyCode}-${Date.now().toString().slice(-4)}`;
-    }
-  },
-
-  async importProducts(items: any[]): Promise<number> {
-    const batch = writeBatch(konterFirestore);
-    let count = 0;
-    for (const item of items) {
-      const ref = doc(collection(konterFirestore, "konter_products"));
-      batch.set(ref, {
-        ...item,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      count++;
-    }
-    await batch.commit();
-    return count;
-  },
-
-  // ================= 2. MASTER FAMILIES =================
-  async getFamilies(): Promise<KonterProductFamily[]> {
-    try {
-      const snap = await getDocs(collection(konterFirestore, "konter_families"));
-      return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-    } catch (e) {
-      console.warn("Gagal getFamilies:", e);
-      return [];
-    }
-  },
-
-  async createFamily(name: string, description?: string, code?: string): Promise<void> {
-    await addDoc(collection(konterFirestore, "konter_families"), {
-      code: code || "",
-      name,
-      description: description || "",
-      createdAt: serverTimestamp(),
-    });
-  },
-
-  async updateFamily(id: string, name: string, description?: string, code?: string): Promise<void> {
-    const payload: any = {
-      name,
-      description: description || "",
-      updatedAt: serverTimestamp(),
-    };
-    if (code) payload.code = code;
-    await updateDoc(doc(konterFirestore, "konter_families", id), payload);
-  },
-
-  async deleteFamily(id: string): Promise<void> {
-    await deleteDoc(doc(konterFirestore, "konter_families", id));
-  },
-
-  // ================= 3. SUPPLIERS =================
-  async getSuppliers(): Promise<any[]> {
-    try {
-      const snap = await getDocs(collection(konterFirestore, "konter_suppliers"));
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    } catch (e) {
-      console.warn("Gagal getSuppliers:", e);
-      return [];
-    }
-  },
-
-  async saveSupplier(supplier: any, id?: string): Promise<void> {
-    const payload = { ...supplier, updatedAt: serverTimestamp() };
-    if (id) {
-      await updateDoc(doc(konterFirestore, "konter_suppliers", id), payload);
-    } else {
-      payload.createdAt = serverTimestamp();
-      await addDoc(collection(konterFirestore, "konter_suppliers"), payload);
-    }
-  },
-
-  async deleteSupplier(id: string): Promise<void> {
-    await deleteDoc(doc(konterFirestore, "konter_suppliers", id));
-  },
-
-  // ================= 4. PURCHASE ORDERS & RECEIVING =================
-  async getPurchaseOrders(): Promise<any[]> {
-    try {
-      const snap = await getDocs(collection(konterFirestore, "konter_purchase_orders"));
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    } catch (e) {
-      console.warn("Gagal getPurchaseOrders:", e);
-      return [];
-    }
-  },
-
-  async savePurchaseOrder(po: any, id?: string): Promise<void> {
-    const payload = { ...po, updatedAt: serverTimestamp() };
-    if (id) {
-      await updateDoc(doc(konterFirestore, "konter_purchase_orders", id), payload);
-    } else {
-      payload.createdAt = serverTimestamp();
-      await addDoc(collection(konterFirestore, "konter_purchase_orders"), payload);
-    }
-  },
-
-  async getReceivings(): Promise<any[]> {
-    try {
-      const snap = await getDocs(collection(konterFirestore, "konter_receivings"));
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    } catch (e) {
-      console.warn("Gagal getReceivings:", e);
-      return [];
-    }
-  },
-
-  async saveReceiving(rec: any): Promise<void> {
-    await addDoc(collection(konterFirestore, "konter_receivings"), {
-      ...rec,
-      createdAt: serverTimestamp(),
-    });
-  },
-
-  // ================= 5. PENJUALAN (SALES) =================
-  async getSales(limitCount = 200): Promise<any[]> {
+  async getSales(startDate?: string, endDate?: string, limitCount = 500): Promise<any[]> {
     try {
       const snap = await getDocs(collection(konterFirestore, "konter_sales"));
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      let list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+
+      if (startDate || endDate) {
+        list = list.filter((s: any) => {
+          let sDateStr = "";
+          if (s.date) {
+            if (s.date.seconds) sDateStr = new Date(s.date.seconds * 1000).toISOString().slice(0, 10);
+            else if (typeof s.date.toDate === "function") sDateStr = s.date.toDate().toISOString().slice(0, 10);
+            else if (typeof s.date === "string") sDateStr = s.date.slice(0, 10);
+          } else if (s.createdAt) {
+            if (s.createdAt.seconds) sDateStr = new Date(s.createdAt.seconds * 1000).toISOString().slice(0, 10);
+            else if (typeof s.createdAt === "string") sDateStr = s.createdAt.slice(0, 10);
+          }
+          if (!sDateStr) return false;
+          if (startDate && sDateStr < startDate) return false;
+          if (endDate && sDateStr > endDate) return false;
+          return true;
+        });
+      }
+
       return list.sort((a: any, b: any) => {
         const tA = a.createdAt?.seconds || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
         const tB = b.createdAt?.seconds || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
@@ -199,122 +59,64 @@ export const operationalService = {
     }
   },
 
-  async saveSale(saleData: any): Promise<void> {
-    await addDoc(collection(konterFirestore, "konter_sales"), {
-      ...saleData,
-      createdAt: serverTimestamp(),
-    });
+
+  async getSuppliers(): Promise<any[]> {
+    try {
+      const snap = await getDocs(collection(konterFirestore, "konter_suppliers"));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch (e) {
+      return [];
+    }
   },
 
-  // ================= 6. CASH COUNT =================
+
+  async getPiutangList(): Promise<any[]> {
+    try {
+      const snap = await getDocs(collection(konterFirestore, "konter_piutang"));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch (e) {
+      return [];
+    }
+  },
+
+
   async getCashCounts(): Promise<any[]> {
     try {
       const snap = await getDocs(collection(konterFirestore, "konter_cash_counts"));
       return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     } catch (e) {
-      console.warn("Gagal getCashCounts:", e);
       return [];
     }
   },
 
-  async saveCashCount(data: any): Promise<void> {
-    await addDoc(collection(konterFirestore, "konter_cash_counts"), {
-      ...data,
-      createdAt: serverTimestamp(),
-    });
-  },
 
-  // ================= 7. STOCK ADJUSTMENT =================
-  async getAdjustments(): Promise<any[]> {
+  async getReceivings(): Promise<any[]> {
     try {
-      const snap = await getDocs(collection(konterFirestore, "konter_stock_adjustments"));
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      return list.sort((a: any, b: any) => {
-        const tA = a.createdAt?.seconds || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-        const tB = b.createdAt?.seconds || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
-        return tB - tA;
-      });
+      const snap = await getDocs(collection(konterFirestore, "konter_receivings"));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     } catch (e) {
-      console.warn("Gagal getAdjustments:", e);
       return [];
     }
   },
 
-  async executeStockAdjustment(params: {
-    productId: string;
-    physicalStock: number;
-    reason: string;
-    operatorName?: string;
-  }): Promise<void> {
-    const prodRef = doc(konterFirestore, "konter_products", params.productId);
-    const prodSnap = await getDoc(prodRef);
-    if (!prodSnap.exists()) throw new Error("Produk tidak ditemukan");
 
-    const prodData = prodSnap.data() as any;
-    const currentStock = Number(prodData.currentStock) || 0;
-    const diff = params.physicalStock - currentStock;
-    const refCode = "ADJ-" + Date.now();
-    const nowStr = new Date().toISOString();
-
-    const batch = writeBatch(konterFirestore);
-
-    batch.update(prodRef, {
-      currentStock: params.physicalStock,
-      updatedAt: serverTimestamp(),
-    });
-
-    const adjRef = doc(collection(konterFirestore, "konter_stock_adjustments"));
-    batch.set(adjRef, {
-      refCode,
-      productId: params.productId,
-      productName: prodData.name || "",
-      sku: prodData.sku || "",
-      systemStock: currentStock,
-      physicalStock: params.physicalStock,
-      difference: diff,
-      reason: params.reason,
-      operator: params.operatorName || "Admin",
-      createdAt: serverTimestamp(),
-    });
-
-    const moveRef = doc(collection(konterFirestore, "konter_stock_movements"));
-    batch.set(moveRef, {
-      refCode,
-      sku: prodData.sku || "",
-      productName: prodData.name || "",
-      type: diff >= 0 ? "IN_ADJUSTMENT" : "OUT_ADJUSTMENT",
-      qty: Math.abs(diff),
-      balanceBefore: currentStock,
-      balanceAfter: params.physicalStock,
-      notes: params.reason,
-      createdAt: serverTimestamp(),
-    });
-
-    const cardRef = doc(collection(konterFirestore, "konter_stock_cards"));
-    batch.set(cardRef, {
-      date: nowStr,
-      refCode,
-      productId: params.productId,
-      sku: prodData.sku || "",
-      productName: prodData.name || "",
-      flow: diff >= 0 ? "IN" : "OUT",
-      qty: Math.abs(diff),
-      remainingStock: params.physicalStock,
-      notes: "Stock Adjustment: " + params.reason,
-      createdAt: serverTimestamp(),
-    });
-
-    await batch.commit();
+  async getFamilies(): Promise<any[]> {
+    try {
+      const snap = await getDocs(collection(konterFirestore, "konter_families"));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch (e) {
+      return [];
+    }
   },
 
-  // ================= 8. STOCK MOVEMENTS & STOCK CARDS =================
+
   async getMovements(limitCount = 150): Promise<any[]> {
     try {
       const snap = await getDocs(collection(konterFirestore, "konter_stock_movements"));
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       return list.sort((a: any, b: any) => {
-        const tA = a.createdAt?.seconds || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-        const tB = b.createdAt?.seconds || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        const tA = a.createdAt?.seconds || 0;
+        const tB = b.createdAt?.seconds || 0;
         return tB - tA;
       }).slice(0, limitCount);
     } catch (e) {
@@ -323,71 +125,84 @@ export const operationalService = {
     }
   },
 
-  async getStockCards(productId?: string): Promise<any[]> {
+
+  async getAdjustments(): Promise<any[]> {
     try {
-      let q = collection(konterFirestore, "konter_stock_cards") as any;
-      if (productId) {
-        q = query(q, where("productId", "==", productId));
-      }
-      const snap = await getDocs(q);
+      const snap = await getDocs(collection(konterFirestore, "konter_stock_adjustments"));
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       return list.sort((a: any, b: any) => {
-        const tA = a.createdAt?.seconds || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-        const tB = b.createdAt?.seconds || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        const tA = a.createdAt?.seconds || 0;
+        const tB = b.createdAt?.seconds || 0;
         return tB - tA;
       });
     } catch (e) {
-      console.warn("Gagal getStockCards:", e);
+      console.warn("Gagal getAdjustments:", e);
       return [];
     }
   },
 
-  // ================= 9. INTERNAL PURCHASE & RULES =================
-  async getIPRules(): Promise<any[]> {
+  async getProducts(): Promise<KonterProduct[]> {
     try {
-      const snap = await getDocs(collection(konterFirestore, "konter_ip_rules"));
+      const snap = await getDocs(collection(konterFirestore, "konter_products"));
+      return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+    } catch (e) {
+      return [];
+    }
+  },
+
+  async getPurchaseOrders(): Promise<any[]> {
+    try {
+      const snap = await getDocs(collection(konterFirestore, "konter_purchase_orders"));
       return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     } catch (e) {
-      console.warn("Gagal getIPRules:", e);
       return [];
     }
   },
 
-  async saveIPRule(rule: { sourceProductId: string; targetProductId: string; ratio: number; notes?: string }): Promise<void> {
-    await addDoc(collection(konterFirestore, "konter_ip_rules"), {
-      ...rule,
+  async createPurchaseOrder(po: any): Promise<any> {
+    const docNo = po.orderNumber || po.poNumber || generateDateDocCode("PO");
+    const payload = {
+      ...po,
+      orderNumber: docNo,
+      poNumber: docNo,
+      status: po.status || "PENDING",
       createdAt: serverTimestamp(),
-    });
+      updatedAt: serverTimestamp(),
+    };
+    const ref = await addDoc(collection(konterFirestore, "konter_purchase_orders"), payload);
+    return { id: ref.id, ...payload };
   },
 
-  async deleteIPRule(id: string): Promise<void> {
-    await deleteDoc(doc(konterFirestore, "konter_ip_rules", id));
-  },
-
-  async processInternalPurchase(params: {
-    sourceProduct: any;
-    targetProduct: any;
-    qtySource: number;
-    qtyTarget: number;
-    sellingPriceTarget: number;
-    capitalPriceTarget: number;
-    notes?: string;
-    operator?: string;
-  }): Promise<void> {
-    if (params.qtySource < params.qtyTarget) {
-      throw new Error("Jumlah Qty Product Source tidak boleh lebih kecil dari Qty Product Target!");
-    }
-
-    const batch = writeBatch(konterFirestore);
-    const nowStr = new Date().toISOString();
-    const refCode = "IP-" + Date.now();
-
-    const sourceRef = doc(konterFirestore, "konter_products", params.sourceProduct.id);
-    const newSourceStock = Math.max(0, (params.sourceProduct.currentStock || 0) - params.qtySource);
-    batch.update(sourceRef, {
-      currentStock: newSourceStock,
+  // Perbaikan error cancelPurchaseOrder is not a function
+  async cancelPurchaseOrder(id: string, reason?: string): Promise<void> {
+    const poRef = doc(konterFirestore, "konter_purchase_orders", id);
+    await updateDoc(poRef, {
+      status: "CANCELLED",
+      cancelReason: reason || "Dibatalkan oleh operator",
       updatedAt: serverTimestamp(),
     });
+  },
+
+  async getInternalPurchases(limitCount = 100): Promise<any[]> {
+    try {
+      const snap = await getDocs(collection(konterFirestore, "konter_internal_purchases"));
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      return list.sort((a: any, b: any) => {
+        const tA = a.createdAt?.seconds || 0;
+        const tB = b.createdAt?.seconds || 0;
+        return tB - tA;
+      }).slice(0, limitCount);
+    } catch (e) {
+      return [];
+    }
+  },
+
+  async processInternalPurchase(params: any): Promise<string> {
+    const batch = writeBatch(konterFirestore);
+    const docNo = generateDateDocCode("IP");
+    const sourceRef = doc(konterFirestore, "konter_products", params.sourceProduct.id);
+    const newSourceStock = Math.max(0, (params.sourceProduct.currentStock || 0) - params.qtySource);
+    batch.update(sourceRef, { currentStock: newSourceStock, updatedAt: serverTimestamp() });
 
     const targetRef = doc(konterFirestore, "konter_products", params.targetProduct.id);
     const newTargetStock = (params.targetProduct.currentStock || 0) + params.qtyTarget;
@@ -398,161 +213,157 @@ export const operationalService = {
       updatedAt: serverTimestamp(),
     });
 
-    const adjRef = doc(collection(konterFirestore, "konter_stock_adjustments"));
-    batch.set(adjRef, {
-      refCode,
-      type: "INTERNAL_PURCHASE",
-      sourceProductId: params.sourceProduct.id,
-      sourceSku: params.sourceProduct.sku || "",
-      sourceName: params.sourceProduct.name || "",
-      qtySource: params.qtySource,
-      targetProductId: params.targetProduct.id,
-      targetSku: params.targetProduct.sku || "",
-      targetName: params.targetProduct.name || "",
-      qtyTarget: params.qtyTarget,
-      sellingPriceTarget: Number(params.sellingPriceTarget) || 0,
-      capitalPriceTarget: Number(params.capitalPriceTarget) || 0,
-      notes: params.notes || "Konversi Internal Purchase Blank Voucher",
-      operator: params.operator || "Admin",
-      createdAt: serverTimestamp(),
-    });
-
-    const moveSrc = doc(collection(konterFirestore, "konter_stock_movements"));
-    batch.set(moveSrc, {
-      refCode,
-      sku: params.sourceProduct.sku || "",
-      productName: params.sourceProduct.name || "",
-      type: "OUT_INTERNAL_PURCHASE",
-      qty: params.qtySource,
-      balanceBefore: params.sourceProduct.currentStock || 0,
-      balanceAfter: newSourceStock,
-      notes: "Inject ke " + params.targetProduct.name,
-      createdAt: serverTimestamp(),
-    });
-
-    const moveTgt = doc(collection(konterFirestore, "konter_stock_movements"));
-    batch.set(moveTgt, {
-      refCode,
-      sku: params.targetProduct.sku || "",
-      productName: params.targetProduct.name || "",
-      type: "IN_INTERNAL_PURCHASE",
-      qty: params.qtyTarget,
-      balanceBefore: params.targetProduct.currentStock || 0,
-      balanceAfter: newTargetStock,
-      notes: "Hasil IP dari " + params.sourceProduct.name,
-      createdAt: serverTimestamp(),
-    });
-
-    const cardSrc = doc(collection(konterFirestore, "konter_stock_cards"));
-    batch.set(cardSrc, {
-      date: nowStr,
-      refCode,
-      productId: params.sourceProduct.id,
-      sku: params.sourceProduct.sku || "",
-      productName: params.sourceProduct.name || "",
-      flow: "OUT",
-      qty: params.qtySource,
-      remainingStock: newSourceStock,
-      notes: "Konversi IP -> " + params.targetProduct.name,
-      createdAt: serverTimestamp(),
-    });
-
-    const cardTgt = doc(collection(konterFirestore, "konter_stock_cards"));
-    batch.set(cardTgt, {
-      date: nowStr,
-      refCode,
-      productId: params.targetProduct.id,
-      sku: params.targetProduct.sku || "",
-      productName: params.targetProduct.name || "",
-      flow: "IN",
-      qty: params.qtyTarget,
-      remainingStock: newTargetStock,
-      notes: "Hasil IP dari " + params.sourceProduct.name,
+    const ipRef = doc(collection(konterFirestore, "konter_internal_purchases"));
+    batch.set(ipRef, {
+      docNo,
+      ...params,
       createdAt: serverTimestamp(),
     });
 
     await batch.commit();
+    return docNo;
   },
 
-  // ================= 10. TRANSFERS =================
-  async getTransfers(): Promise<any[]> {
+  async getStockOpnameList(): Promise<any[]> {
     try {
-      const snap = await getDocs(collection(konterFirestore, "konter_stock_transfers"));
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const snap = await getDocs(collection(konterFirestore, "konter_stock_opnames"));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
     } catch (e) {
-      console.warn("Gagal getTransfers:", e);
       return [];
     }
   },
 
-  async saveTransfer(transfer: any): Promise<void> {
-    await addDoc(collection(konterFirestore, "konter_stock_transfers"), {
-      ...transfer,
-      createdAt: serverTimestamp(),
-    });
-  },
-
-  // ================= 11. PIUTANG (RECEIVABLES) =================
-  async getPiutangList(): Promise<any[]> {
-    try {
-      const snap = await getDocs(collection(konterFirestore, "konter_piutang"));
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      return list.sort((a: any, b: any) => {
-        const tA = a.createdAt?.seconds || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-        const tB = b.createdAt?.seconds || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
-        return tB - tA;
+  // SOP baru dengan status OPEN (khusus produk fisik)
+  async initializeStockOpname(params?: { notes?: string; initiatedBy?: string }): Promise<any> {
+    const prodSnap = await getDocs(collection(konterFirestore, "konter_products"));
+    const physicalProducts = prodSnap.docs
+      .map((d) => ({ id: d.id, ...(d.data() as any) }))
+      .filter((p: any) => {
+        const typeStr = ((p.type || p.category || p.stockCategory || p.productCategory || "") + "").toLowerCase();
+        const nameStr = ((p.name || "") + "").toLowerCase();
+        const isJasa = typeStr.includes("jasa") || typeStr.includes("service") || typeStr.includes("fee") || nameStr.startsWith("jasa ") || nameStr.startsWith("servis ");
+        return !isJasa;
       });
-    } catch (e) {
-      console.warn("Gagal getPiutangList:", e);
-      return [];
-    }
+
+    const sopDocNo = generateDateDocCode("SOP");
+    const items = physicalProducts.map((p: any) => ({
+      productId: p.id,
+      sku: p.sku || "",
+      productName: p.name || "",
+      systemStock: Number(p.currentStock) || 0,
+      physicalStock: null,
+      difference: 0,
+      capitalPrice: Number(p.capitalPrice) || 0,
+      varianceValue: 0,
+      counted: false,
+    }));
+
+    const payload = {
+      sopNumber: sopDocNo,
+      status: "OPEN", // Status awal OPEN
+      totalItems: items.length,
+      items,
+      notes: params?.notes || "Inisialisasi Stock Opname Produk Fisik",
+      initiatedBy: params?.initiatedBy || "Admin",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    const docRef = await addDoc(collection(konterFirestore, "konter_stock_opnames"), payload);
+    return { id: docRef.id, ...payload };
   },
 
-  async savePiutang(data: any, id?: string): Promise<string> {
-    const payload = { ...data, updatedAt: serverTimestamp() };
-    if (id) {
-      await updateDoc(doc(konterFirestore, "konter_piutang", id), payload);
-      return id;
-    } else {
-      payload.createdAt = serverTimestamp();
-      const res = await addDoc(collection(konterFirestore, "konter_piutang"), payload);
-      return res.id;
-    }
-  },
-
-  async updatePiutangPayment(id: string, amountPaid: number, notes?: string): Promise<void> {
-    const pRef = doc(konterFirestore, "konter_piutang", id);
-    const snap = await getDoc(pRef);
-    if (!snap.exists()) throw new Error("Data piutang tidak ditemukan");
-
-    const curr = snap.data() as any;
-    const totalRemaining = Math.max(0, (Number(curr.remainingAmount) || 0) - amountPaid);
-    const history = curr.paymentHistory || [];
-
-    history.push({
-      amount: amountPaid,
-      paidAt: new Date().toISOString(),
-      notes: notes || "Pembayaran cicilan",
+  // Update snapshot dengan status COUNTED atau READY
+  async updateStockOpnameSnapshot(id: string, items: any[], status = "COUNTED"): Promise<void> {
+    const sopRef = doc(konterFirestore, "konter_stock_opnames", id);
+    const calculatedItems = items.map((it) => {
+      const sys = Number(it.systemStock) || 0;
+      const phys = it.physicalStock !== null && it.physicalStock !== undefined ? Number(it.physicalStock) : sys;
+      const diff = phys - sys;
+      const cap = Number(it.capitalPrice) || 0;
+      return {
+        ...it,
+        physicalStock: phys,
+        difference: diff,
+        varianceValue: diff * cap,
+        counted: true,
+      };
     });
 
-    await updateDoc(pRef, {
-      remainingAmount: totalRemaining,
-      status: totalRemaining <= 0 ? "LUNAS" : "BELUM_LUNAS",
-      paymentHistory: history,
+    await updateDoc(sopRef, {
+      items: calculatedItems,
+      status: status, // Bisa COUNTED atau READY
       updatedAt: serverTimestamp(),
     });
+  },
+
+  // Batalkan SOP dengan status OPEN beserta alasannya
+  async cancelStockOpname(id: string, reason: string): Promise<void> {
+    const sopRef = doc(konterFirestore, "konter_stock_opnames", id);
+    const sopSnap = await getDoc(sopRef);
+    if (!sopSnap.exists()) throw new Error("Dokumen SOP tidak ditemukan");
+    const data = sopSnap.data();
+    if (data.status !== "OPEN") throw new Error("Hanya SOP dengan status OPEN yang dapat dibatalkan");
+
+    await updateDoc(sopRef, {
+      status: "CANCELLED",
+      cancelReason: reason,
+      updatedAt: serverTimestamp(),
+    });
+  },
+
+  // Posting SOP menjadi POSTED
+  async postStockOpname(id: string, reviewedBy?: string): Promise<string> {
+    const sopRef = doc(konterFirestore, "konter_stock_opnames", id);
+    const sopSnap = await getDoc(sopRef);
+    if (!sopSnap.exists()) throw new Error("Dokumen SOP tidak ditemukan");
+
+    const sopData = sopSnap.data() as any;
+    if (sopData.status === "POSTED") throw new Error("Dokumen SOP ini sudah pernah di-posting!");
+
+    const postDocNo = generateDateDocCode("POST");
+    const batch = writeBatch(konterFirestore);
+    const nowStr = new Date().toISOString();
+
+    for (const item of sopData.items || []) {
+      const physStock = item.physicalStock !== null && item.physicalStock !== undefined ? Number(item.physicalStock) : Number(item.systemStock || 0);
+      const sysStock = Number(item.systemStock) || 0;
+      const diff = physStock - sysStock;
+
+      const prodRef = doc(konterFirestore, "konter_products", item.productId);
+      batch.update(prodRef, { currentStock: physStock, updatedAt: serverTimestamp() });
+
+      if (diff !== 0) {
+        const moveRef = doc(collection(konterFirestore, "konter_stock_movements"));
+        batch.set(moveRef, {
+          refCode: postDocNo,
+          sku: item.sku || "",
+          productName: item.productName || "",
+          type: diff > 0 ? "IN_OPNAME" : "OUT_OPNAME",
+          qty: Math.abs(diff),
+          balanceBefore: sysStock,
+          balanceAfter: physStock,
+          notes: `Posting Opname ${sopData.sopNumber}`,
+          createdAt: serverTimestamp(),
+        });
+      }
+    }
+
+    batch.update(sopRef, {
+      status: "POSTED",
+      postingDocNo: postDocNo,
+      postedBy: reviewedBy || "Admin",
+      postedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    await batch.commit();
+    return postDocNo;
   }
 };
 
-// ==========================================
-// EXPORT ALIAS COMPATIBILITY LENGKAP
-// ==========================================
 export const supplierOperationalService = operationalService;
 export const cashCountService = operationalService;
 export const purchaseOrderService = operationalService;
 export const poService = operationalService;
-export const piutangService = operationalService;
-export const apiService = operationalService;
-export const wmsService = operationalService;
-export const konterService = operationalService;
 export default operationalService;

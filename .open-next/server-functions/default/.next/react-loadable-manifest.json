@@ -2,15 +2,18 @@
   "app\\DashboardClient.tsx -> ./adjustment/page": {
     "id": 80155,
     "files": [
-      "static/chunks/155-9371bf8a14632c7b.js"
+      "static/chunks/164f4fb6-8bfd85ee06f17402.js",
+      "static/chunks/5181-df81993cb67f69fd.js",
+      "static/chunks/155-155f9ff5a65793b6.js"
     ]
   },
   "app\\DashboardClient.tsx -> ./cash-count/page": {
     "id": 47177,
     "files": [
       "static/chunks/164f4fb6-8bfd85ee06f17402.js",
-      "static/chunks/6587-96a3fe2aff846ab3.js",
-      "static/chunks/9558-264c660b897e01c1.js"
+      "static/chunks/5181-df81993cb67f69fd.js",
+      "static/chunks/5177-75b08dd58070f537.js",
+      "static/chunks/9558-ce538897ccf3bfe8.js"
     ]
   },
   "app\\DashboardClient.tsx -> ./import-sales/page": {
@@ -28,13 +31,13 @@
   "app\\DashboardClient.tsx -> ./movement/page": {
     "id": 3541,
     "files": [
-      "static/chunks/3541.f8087baf47afff60.js"
+      "static/chunks/3541.5977af36c1f1e42a.js"
     ]
   },
   "app\\DashboardClient.tsx -> ./purchase/page": {
     "id": 63227,
     "files": [
-      "static/chunks/3227.2ae6e866220972a3.js"
+      "static/chunks/3227.fabd8127840d1bd5.js"
     ]
   },
   "app\\DashboardClient.tsx -> ./receiving/page": {
@@ -52,7 +55,7 @@
   "app\\DashboardClient.tsx -> ./sales-report/page": {
     "id": 80377,
     "files": [
-      "static/chunks/377.d8905e5445ca2f60.js"
+      "static/chunks/377.c9bbfdd245fc82a5.js"
     ]
   },
   "app\\DashboardClient.tsx -> ./suppliers/page": {

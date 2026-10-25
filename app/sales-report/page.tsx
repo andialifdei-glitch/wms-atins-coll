@@ -142,7 +142,7 @@ export default function KonterSalesReportPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <div className="bg-white p-4 rounded-xl border border-rose-100 shadow-sm flex items-center gap-3">
           <div>
             <label className="block text-[11px] font-bold text-slate-600 mb-1">Dari Tanggal</label>
