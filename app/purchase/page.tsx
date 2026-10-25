@@ -57,7 +57,22 @@ export default function PurchasePage() {
           <h1 className="text-xl font-bold text-slate-900">Purchase Order (PO)</h1>
           <p className="text-slate-500 mt-0.5">Kelola pesanan pembelian barang ke supplier dan pembatalan PO.</p>
         </div>
-        <button onClick={loadData} className="px-3 py-1.5 bg-[#BE185D] text-white font-bold rounded-lg shadow-xs hover:bg-[#9D174D]">Refresh</button>
+        <button onClick={() => {
+          const supName = prompt("Masukkan Nama Supplier:");
+          if (!supName) return;
+          const totalStr = prompt("Masukkan Total Nominal PO (Rp):", "0");
+          const totalAmount = parseFloat(totalStr) || 0;
+          operationalService.createPurchaseOrder({
+            supplierName: supName,
+            totalAmount: totalAmount,
+            status: "PENDING"
+          }).then(() => {
+            setAlertInfo({ title: "Berhasil", message: "Purchase Order baru berhasil dibuat.", type: "success" });
+            loadData();
+          }).catch((err) => {
+            setAlertInfo({ title: "Gagal", message: err.message, type: "error" });
+          });
+        }} className="px-3.5 py-1.5 bg-[#BE185D] text-white font-bold rounded-lg shadow-xs hover:bg-[#9D174D]">+ Buat PO Baru</button>
       </div>
 
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs overflow-x-auto">

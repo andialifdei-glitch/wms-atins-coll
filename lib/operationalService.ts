@@ -1,3 +1,33 @@
+
+function generatePrefixedDocCode(prefix: string): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const rand = Math.floor(100 + Math.random() * 900);
+  return `${prefix}-${y}${m}${d}-${rand}`;
+}
+
+
+function generateCHNumber(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const rand = Math.floor(100 + Math.random() * 900);
+  return `CH-${y}${m}${d}-${rand}`;
+}
+
+
+function generateCashCountNumber(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  return `CHC-${y}${m}${d}-${rand}`;
+}
+
 import {
   collection,
   doc,
@@ -24,6 +54,37 @@ function generateDateDocCode(prefix: string): string {
 }
 
 export const operationalService = {
+
+  async saveReceiving(rec: any): Promise<any> {
+    const docNo = rec.receivingNumber || rec.rcvNumber || generatePrefixedDocCode("RCV");
+    const payload = {
+      ...rec,
+      receivingNumber: docNo,
+      rcvNumber: docNo,
+      createdAt: serverTimestamp(),
+    };
+    const res = await addDoc(collection(konterFirestore, "konter_receivings"), payload);
+    return { id: res.id, ...payload };
+  },
+
+
+  async saveCashCount(data: any): Promise<any> {
+    try {
+      const docNo = data.docNo || data.cashCountNumber || generateCHNumber();
+      const payload = {
+        ...data,
+        docNo,
+        cashCountNumber: docNo,
+        createdAt: serverTimestamp(),
+      };
+      const res = await addDoc(collection(konterFirestore, "konter_cash_counts"), payload);
+      return { id: res.id, ...payload };
+    } catch (e) {
+      console.warn("Gagal saveCashCount:", e);
+      throw e;
+    }
+  },
+
 
   async getSales(startDate?: string, endDate?: string, limitCount = 500): Promise<any[]> {
     try {
@@ -160,7 +221,7 @@ export const operationalService = {
   },
 
   async createPurchaseOrder(po: any): Promise<any> {
-    const docNo = po.orderNumber || po.poNumber || generateDateDocCode("PO");
+    const docNo = po.orderNumber || po.poNumber || generatePrefixedDocCode("PO");
     const payload = {
       ...po,
       orderNumber: docNo,
@@ -199,7 +260,7 @@ export const operationalService = {
 
   async processInternalPurchase(params: any): Promise<string> {
     const batch = writeBatch(konterFirestore);
-    const docNo = generateDateDocCode("IP");
+    const docNo = generatePrefixedDocCode("IP");
     const sourceRef = doc(konterFirestore, "konter_products", params.sourceProduct.id);
     const newSourceStock = Math.max(0, (params.sourceProduct.currentStock || 0) - params.qtySource);
     batch.update(sourceRef, { currentStock: newSourceStock, updatedAt: serverTimestamp() });
@@ -245,7 +306,7 @@ export const operationalService = {
         return !isJasa;
       });
 
-    const sopDocNo = generateDateDocCode("SOP");
+    const sopDocNo = generatePrefixedDocCode("SOP");
     const items = physicalProducts.map((p: any) => ({
       productId: p.id,
       sku: p.sku || "",
@@ -321,7 +382,7 @@ export const operationalService = {
     const sopData = sopSnap.data() as any;
     if (sopData.status === "POSTED") throw new Error("Dokumen SOP ini sudah pernah di-posting!");
 
-    const postDocNo = generateDateDocCode("POST");
+    const postDocNo = generatePrefixedDocCode("POST");
     const batch = writeBatch(konterFirestore);
     const nowStr = new Date().toISOString();
 
