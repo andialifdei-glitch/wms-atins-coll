@@ -1,0 +1,40 @@
+﻿        {/* Dashboard Utama */}
+        <div className="flex flex-col gap-1">
+          <Link
+            href="/"
+            className={
+              "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all " +
+              (isHomeActive
+                ? "bg-indigo-600 text-white font-semibold shadow-sm"
+                : "text-slate-300 hover:bg-slate-800 hover:text-white")
+            }
+          >
+            <span>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸
+            <span>Dashboard Utama</span>
+          </Link>
+        </div>
+
+        {/* Menu Dropdown Atin's Collection (WMS) */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setOpenWms(!openWms)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-rose-400">ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸
+              <span className="font-semibold text-rose-300">Atin&apos;s Collection</span>
+            </div>
+            <span className={"text-[10px] text-slate-400 transform transition-transform " + (openWms ? "rotate-180" : "")}>
+              ÃƒÆ’Ã‚Â¢
+            </span>
+          </button>
+
+          {openWms && (
+            <div className="mt-1 pl-3 ml-3 border-l-2 border-rose-500/30 flex flex-col gap-1">
+              {wmsMenus.map((item) => {
+                const isActive = pathname === "/" && activeTab === item.id;
+                return (
+                  <Link
+                    key={item.id}
+                    href={item.href}

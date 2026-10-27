@@ -108,10 +108,22 @@
       "namedRegex": "^/api/shipping/calculate(?:/)?$"
     },
     {
+      "page": "/api/shipping/config",
+      "regex": "^/api/shipping/config(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/shipping/config(?:/)?$"
+    },
+    {
       "page": "/api/shipping/cost",
       "regex": "^/api/shipping/cost(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/shipping/cost(?:/)?$"
+    },
+    {
+      "page": "/api/shipping/resolve-destination",
+      "regex": "^/api/shipping/resolve\\-destination(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/shipping/resolve\\-destination(?:/)?$"
     },
     {
       "page": "/api/suppliers",

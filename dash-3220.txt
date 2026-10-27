@@ -1,0 +1,100 @@
+﻿                      {isSavingApiKey ? "Menyimpan..." : "Simpan API Key"}
+                    </button>
+                  </div>
+                  {apiKeyTestedSuccess && (
+                    <span className="text-[11px] text-emerald-700 font-bold block">âœ“ Kunci API terverifikasi dan siap disimpan.</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 7: HUMAN (STAF, SUPPLIER, CUSTOMER) */}
+          {currentTab === "human" && isRootAdmin && (
+            <div className="space-y-4">
+              <div className="flex gap-2 border-b border-slate-200 pb-2">
+                <button
+                  type="button"
+                  onClick={() => setHumanSubTab("staff")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                    humanSubTab === "staff" ? "bg-[#9F1239] text-white shadow-xs" : "bg-white text-slate-700 border border-slate-200"
+                  }`}
+                >
+                  Staf Gudang ({usersList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHumanSubTab("suppliers")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                    humanSubTab === "suppliers" ? "bg-[#9F1239] text-white shadow-xs" : "bg-white text-slate-700 border border-slate-200"
+                  }`}
+                >
+                  Supplier Rekanan ({suppliers.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHumanSubTab("customers")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                    humanSubTab === "customers" ? "bg-[#9F1239] text-white shadow-xs" : "bg-white text-slate-700 border border-slate-200"
+                  }`}
+                >
+                  Daftar Pelanggan ({customers.length})
+                </button>
+              </div>
+
+              {/* 7.1 STAF GUDANG */}
+              {humanSubTab === "staff" && (
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3.5">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 uppercase">Akun Pengguna Staf</span>
+                      <p className="text-[11px] text-slate-500">Akses operasional gudang dan manajemen akun</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const fallbackId = `ST-${String(usersList.length + 1).padStart(2, "0")}`;
+                        setStaffForm({ staffId: fallbackId, fullName: "", userId: "", password: "" });
+                        setStaffModalMode("create");
+                        setIsStaffModalOpen(true);
+                      }}
+                      className="px-3.5 py-1.5 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-semibold rounded-lg shadow-xs"
+                    >
+                      + Tambah Staf Baru
+                    </button>
+                  </div>
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5">ID Staf</th>
+                        <th className="p-2.5">User ID</th>
+                        <th className="p-2.5">Nama Lengkap</th>
+                        <th className="p-2.5">Role</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {usersList.map((u, idx) => (
+                        <tr key={`${u.id || u.userId || "user"}-${idx}`}>
+                          <td className="p-2.5 font-mono font-bold text-slate-900">{u.staffId || `ST-${String(idx + 1).padStart(2, "0")}`}</td>
+                          <td className="p-2.5 font-mono">{u.userId || u.username}</td>
+                          <td className="p-2.5 font-semibold text-slate-900">{u.fullName || u.name}</td>
+                          <td className="p-2.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800">
+                              {u.role || "STAFF_GUDANG"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {usersList.length === 0 && (
+                        <tr><td colSpan={4} className="p-4 text-center text-slate-400">Belum ada data staf terdaftar.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* 7.2 SUPPLIER REKANAN */}
+              {humanSubTab === "suppliers" && (
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3.5">
+                  <div className="flex justify-between items-center">
+                    <div>

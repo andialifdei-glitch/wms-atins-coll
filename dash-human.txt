@@ -1,0 +1,500 @@
+﻿              {currentTab === "human" && "Manajemen Staf & Hak Akses"}
+              {(currentTab.startsWith("konter")) && "Modul Operasional Konter & PPOB"}
+            </h1>
+            <p className="text-xs text-slate-500">Database Firestore Realtime Connected</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={loadAllData}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium border border-slate-200 transition"
+            >
+              ðŸ”„ Refresh Data
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+            >
+              <span>ðŸšª</span>
+              <span>Logout</span>
+            </button>
+          </div>
+        </header>
+
+        {/* CONTENT TABS */}
+        <main className="p-6 space-y-6 flex-1">
+          {/* SUB-MODUL OPERASIONAL KONTER (RENDER SESUAI MENU AKTIF) */}
+          {currentTab === "konter" && (
+            <div className="space-y-4">
+              <KonterDashboardView />
+            </div>
+          )}
+          {currentTab === "konter_stock" && (
+            <div className="space-y-4">
+              <KonterStockView />
+            </div>
+          )}
+          {currentTab === "konter_movement" && (
+            <div className="space-y-4">
+              <KonterMovementView />
+            </div>
+          )}
+          {currentTab === "konter_adjustment" && (
+            <div className="space-y-4">
+              <KonterAdjustmentView />
+            </div>
+          )}
+          {currentTab === "konter_po" && (
+            <div className="space-y-4">
+              <KonterPoView />
+            </div>
+          )}
+          {currentTab === "konter_receiving" && (
+            <div className="space-y-4">
+              <KonterReceivingView />
+            </div>
+          )}
+          {currentTab === "konter_sales_report" && (
+            <div className="space-y-4">
+              <KonterSalesReportView />
+            </div>
+          )}
+          {currentTab === "konter_stock_card" && (
+            <div className="space-y-4">
+              <KonterStockCardView />
+            </div>
+          )}
+          {currentTab === "konter_cash_count" && (
+            <div className="space-y-4">
+              <KonterCashCountView />
+            </div>
+          )}
+          {currentTab === "konter_import" && (
+            <div className="space-y-4">
+              <KonterImportView />
+            </div>
+          )}
+          {currentTab === "konter_supplier" && (
+            <div className="space-y-4">
+              <KonterSupplierView />
+            </div>
+          )}
+
+          {/* TAB 1: DASHBOARD OPERASIONAL */}
+          {currentTab === "dashboard" && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+                  <div className="text-xs text-slate-500 font-medium">Total Saldo Fisik</div>
+                <div className="text-2xl font-bold text-emerald-700 mt-1">
+                  {products.reduce((acc, p) => acc + Number(p.stock || 0), 0)} pcs
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+                <div className="text-xs text-slate-500 font-medium">SO Status Processing</div>
+                <div className="text-2xl font-bold text-purple-700 mt-1">
+                  {salesOrders.filter((s) => s.status === "PROCESSING").length} Dokumen
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+                <div className="text-xs text-slate-500 font-medium">SO Ready to Deliver</div>
+                <div className="text-2xl font-bold text-amber-700 mt-1">
+                  {salesOrders.filter((s) => s.status === "READY TO DELIVER").length} Dokumen
+                </div>
+              </div>
+            </div>
+            </div>
+          )}
+
+          {/* TAB 2: SALES & DO */}
+          {currentTab === "sales" && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSalesSubTab("so")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                      salesSubTab === "so" ? "bg-[#9F1239] text-white shadow-xs" : "bg-white text-slate-700 border border-slate-200"
+                    }`}
+                  >
+                    Sales Order ({salesOrders.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSalesSubTab("do")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                      salesSubTab === "do" ? "bg-[#9F1239] text-white shadow-xs" : "bg-white text-slate-700 border border-slate-200"
+                    }`}
+                  >
+                    Delivery Order ({deliveryOrders.length})
+                  </button>
+                </div>
+
+                {salesSubTab === "so" && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-semibold text-slate-700">Filter Status:</span>
+                    <select
+                      value={soStatusFilter}
+                      onChange={(e) => setSoStatusFilter(e.target.value)}
+                      className="p-1.5 border border-slate-200 rounded-lg bg-white font-medium text-slate-800 outline-none"
+                    >
+                      <option value="ALL">Semua Status ({salesOrders.length})</option>
+                      <option value="CONFIRMED">CONFIRMED</option>
+                      <option value="PROCESSING">PROCESSING</option>
+                      <option value="READY TO DELIVER">READY TO DELIVER</option>
+                      <option value="DELIVERY ORDER">DELIVERY ORDER</option>
+                      <option value="CANCELLED">CANCELLED</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* LIST SO */}
+              {salesSubTab === "so" && (
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3.5">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <span className="text-xs font-bold text-slate-800">
+                      Menampilkan {displayedSalesOrders.length} Sales Order
+                    </span>
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <input
+                        type="text"
+                        placeholder="Cari SO..."
+                        value={soSearchQuery}
+                        onChange={(e) => setSoSearchQuery(e.target.value)}
+                        className="p-1.5 px-3 border border-slate-200 rounded-lg text-xs outline-none w-full sm:w-64 bg-slate-50 focus:bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingSoId(null);
+                          setSoModalInitCustomer(null);
+                          setSoModalInitItems([]);
+                          setSoModalInitRates([]);
+                          setSoModalInitCost(0);
+                          setSoModalInitCourier("KURIR_TOKO");
+                          setSoModalInitService("Kurir Toko (Tarif Manual)");
+                          setIsSoModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-semibold rounded-lg shadow-xs whitespace-nowrap transition"
+                      >
+                        + Buat Sales Order Baru
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="p-2.5">No SO</th>
+                          <th className="p-2.5">Tanggal</th>
+                          <th className="p-2.5">Pelanggan</th>
+                          <th className="p-2.5">Total Qty</th>
+                          <th className="p-2.5">Ekspedisi &amp; Ongkir</th>
+                          <th className="p-2.5">Total Bayar</th>
+                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5 text-center">Tindakan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {displayedSalesOrders.map((so) => (
+                          <tr key={so.id} className="hover:bg-slate-50/50">
+                            <td className="p-2.5 font-mono font-bold text-slate-900">{so.soId}</td>
+                            <td className="p-2.5">{so.date}</td>
+                            <td className="p-2.5">
+                              <div className="font-semibold text-slate-900">{so.customerName}</div>
+                              <div className="text-[10px] text-slate-500">{so.phone}</div>
+                            </td>
+                            <td className="p-2.5">
+                              {(so.items || []).reduce((acc: number, it: any) => acc + (Number(it.qty || it.quantity) || 0), 0)} pcs
+                            </td>
+                            <td className="p-2.5">
+                              <div>{so.shippingServiceName || so.expedition || "-"}</div>
+                              <div className="text-[10px] text-slate-500">{formatRupiah(Number(so.shippingCost || 0))}</div>
+                            </td>
+                            <td className="p-2.5 font-bold text-emerald-700">{formatRupiah(Number(so.total || 0))}</td>
+                            <td className="p-2.5 font-bold">
+                              <span className={`px-2 py-0.5 rounded text-[10px] ${
+                                so.status === "CONFIRMED" ? "bg-blue-100 text-blue-800" :
+                                so.status === "PROCESSING" ? "bg-purple-100 text-purple-800" :
+                                so.status === "READY TO DELIVER" ? "bg-amber-100 text-amber-800" :
+                                so.status === "DELIVERY ORDER" ? "bg-emerald-100 text-emerald-800" :
+                                "bg-rose-100 text-rose-800"
+                              }`}>
+                                {so.status}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedSoDetail(so);
+                                  setIsSoDetailModalOpen(true);
+                                }}
+                                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded text-xs font-semibold"
+                              >
+                                Detail
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* LIST DO */}
+              {salesSubTab === "do" && (
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-800 uppercase">Daftar Delivery Order</span>
+                    <span className="text-xs text-slate-500">Total: <b>{deliveryOrders.length}</b> DO</span>
+                  </div>
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="p-2.5">No DO</th>
+                          <th className="p-2.5">Ref SO</th>
+                          <th className="p-2.5">Penerima</th>
+                          <th className="p-2.5">Ekspedisi</th>
+                          <th className="p-2.5">Total Pcs</th>
+                          <th className="p-2.5">Total Nilai Penjualan (Rp)</th>
+                          <th className="p-2.5">Tanggal</th>
+                          <th className="p-2.5">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {deliveryOrders.map((d) => {
+                          const totalNilaiDo = (d.items || []).reduce((acc: number, it: any) => acc + (Number(it.subtotal) || (Number(it.qty || 1) * Number(it.price || 0))), 0);
+                          return (
+                            <tr key={d.id} className="hover:bg-slate-50/50">
+                              <td className="p-2.5 font-mono font-bold text-slate-900">{d.doId}</td>
+                              <td className="p-2.5 font-mono">{d.soId}</td>
+                              <td className="p-2.5">{d.recipientName}</td>
+                              <td className="p-2.5">{d.expedition}</td>
+                              <td className="p-2.5 font-bold">{d.totalPcs} pcs</td>
+                              <td className="p-2.5 font-bold text-emerald-700">{formatRupiah(totalNilaiDo)}</td>
+                              <td className="p-2.5">{d.date}</td>
+                              <td className="p-2.5">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                  {d.status || "DELIVERED"}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: INVENTORY */}
+          {currentTab === "inventory" && (
+            <div className="space-y-4">
+              <div className="flex gap-2 border-b border-slate-200 pb-2">
+                {[
+                  { key: "products", label: `Produk & Stok (${products.length})` },
+                  { key: "card", label: "Kartu Mutasi" },
+                  { key: "adjustment", label: `Stock Adjustment (${stockAdjustments.length})` },
+                  { key: "opname", label: "Stock Opname (Counting)" },
+                  { key: "opname_posting", label: "Stock Opname Posting" },
+                  { key: "movement", label: `Histori Mutasi (${stockMovements.length})` },
+                ].map((st) => (
+                  <button
+                    key={st.key}
+                    type="button"
+                    onClick={() => setInvSubTab(st.key)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                      invSubTab === st.key ? "bg-[#9F1239] text-white shadow-xs" : "bg-white text-slate-700 border border-slate-200"
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* 3.1 PRODUK & STOK */}
+              {invSubTab === "products" && (
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3.5">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 uppercase">Master Data Produk &amp; Persediaan</span>
+                      <p className="text-[11px] text-slate-500">Saldo persediaan fisik terkini di gudang</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleExportAllProducts("pdf")}
+                        className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold"
+                      >
+                        Ekspor PDF
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExportAllProducts("excel")}
+                        className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold"
+                      >
+                        Ekspor Excel
+                      </button>
+                      <input
+                        type="text"
+                        placeholder="Cari SKU / Nama / Supplier..."
+                        value={productSearchQuery}
+                        onChange={(e) => setProductSearchQuery(e.target.value)}
+                        className="p-1.5 px-3 border border-slate-200 rounded-lg text-xs outline-none w-full sm:w-56 bg-slate-50 focus:bg-white"
+                      />
+                      {isRootAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsEditingProduct(false);
+                            setProductFormData({
+                              sku: "",
+                              itemName: "",
+                              familyCode: families[0]?.familyCode || "",
+                              weightInGrams: 0,
+                              active: true,
+                              purchasingPrice: 0,
+                              netPrice: 0,
+                              initialStock: 0,
+                              supplierId: "",
+                              supplierName: "",
+                            });
+                            setIsProductModalOpen(true);
+                          }}
+                          className="px-3.5 py-1.5 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-semibold rounded-lg shadow-xs whitespace-nowrap"
+                        >
+                          + Tambah Produk Baru
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="p-2.5">SKU</th>
+                          <th className="p-2.5">Nama Produk</th>
+                          <th className="p-2.5">Stok Fisik</th>
+                          {isRootAdmin && <th className="p-2.5">HPP (Beli)</th>}
+                          <th className="p-2.5">Harga Jual</th>
+                          <th className="p-2.5">Total Saldo Nilai Stok (Rp)</th>
+                          <th className="p-2.5">Supplier Rekanan</th>
+                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5 text-right">Tindakan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredProducts.map((p) => {
+                          const stock = Number(p.stock || 0);
+                          const hpp = Number(p.purchasingPrice || 0);
+                          const totalNilaiStok = stock * hpp;
+                          return (
+                            <tr key={p.id} className="hover:bg-slate-50/50">
+                              <td className="p-2.5 font-mono font-bold text-slate-900">{p.sku}</td>
+                              <td className="p-2.5 font-semibold text-slate-900">{p.itemName}</td>
+                              <td className="p-2.5 font-bold text-emerald-700">{stock} pcs</td>
+                              {isRootAdmin && <td className="p-2.5">{formatRupiah(hpp)}</td>}
+                              <td className="p-2.5 font-bold">{formatRupiah(Number(p.netPrice || 0))}</td>
+                              <td className="p-2.5 font-bold text-emerald-800">{formatRupiah(totalNilaiStok)}</td>
+                              <td className="p-2.5 font-medium">{p.supplierName || "-"}</td>
+                              <td className="p-2.5">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.active ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                                  {p.active ? "Aktif" : "Nonaktif"}
+                                </span>
+                              </td>
+                              <td className="p-2.5 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsEditingProduct(true);
+                                    setProductFormData({
+                                      sku: p.sku,
+                                      itemName: p.itemName,
+                                      familyCode: p.familyCode || "",
+                                      weightInGrams: p.weightInGrams || 0,
+                                      active: p.active !== false,
+                                      purchasingPrice: p.purchasingPrice || 0,
+                                      netPrice: p.netPrice || 0,
+                                      initialStock: p.stock || 0,
+                                      supplierId: p.supplierId || "",
+                                      supplierName: p.supplierName || "",
+                                    });
+                                    setIsProductModalOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 rounded text-[11px] font-semibold"
+                                >
+                                  Edit
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 3.2 KARTU MUTASI */}
+              {invSubTab === "card" && (
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3.5">
+                  <div className="flex justify-between items-center gap-4">
+                    <span className="text-xs font-bold text-slate-900">Buku Besar Kartu Mutasi Produk</span>
+                    <input
+                      type="text"
+                      placeholder="Cari SKU / Nama Barang..."
+                      value={ledgerSearch}
+                      onChange={(e) => setLedgerSearch(e.target.value)}
+                      className="w-64 px-3 py-1.5 border border-slate-200 rounded-lg text-xs outline-none bg-white"
+                    />
+                  </div>
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5">SKU</th>
+                        <th className="p-2.5">Nama Produk</th>
+                        <th className="p-2.5">Saldo Stok Fisik</th>
+                        <th className="p-2.5 text-right">Kartu Mutasi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredLedgerProducts.map((p) => (
+                        <tr key={p.id}>
+                          <td className="p-2.5 font-mono font-bold text-slate-900">{p.sku}</td>
+                          <td className="p-2.5 font-medium">{p.itemName}</td>
+                          <td className="p-2.5 font-bold text-emerald-700">{p.stock || 0} pcs</td>
+                          <td className="p-2.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedProductLedger(p)}
+                              className="px-3 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 rounded text-[11px] font-semibold"
+                            >
+                              Lihat Mutasi
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* 3.3 STOCK ADJUSTMENT */}
+              {invSubTab === "adjustment" && (
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3.5">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 uppercase">Penyesuaian Stok (Stock Adjustment)</span>
+                      <p className="text-[11px] text-slate-500">Koreksi saldo fisik secara atomik</p>
+                    </div>
+                    {!isStaff && (

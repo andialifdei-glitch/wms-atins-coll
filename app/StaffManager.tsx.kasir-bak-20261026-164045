@@ -1,0 +1,333 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+
+interface Staff {
+  docId: string;
+  uid: string;
+  staffId: string;
+  userId: string;
+  username: string;
+  email: string;
+  fullName: string;
+  role: string;
+  active: boolean;
+}
+
+export default function StaffManager() {
+  const [users, setUsers] = useState<Staff[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Modal create
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({ fullName: "", userId: "", password: "", role: "STAFF_GUDANG" });
+  const [idPreview, setIdPreview] = useState("");
+
+  // Modal edit
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ userId: "", fullName: "", role: "STAFF_GUDANG", active: true });
+
+  // Modal reset password
+  const [isResetOpen, setIsResetOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<Staff | null>(null);
+  const [resetPw, setResetPw] = useState("");
+
+  const [submitting, setSubmitting] = useState(false);
+
+  async function loadUsers() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/users", { cache: "no-store" });
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setUsers(json.data);
+      } else {
+        setMsg({ type: "error", text: json.message || "Gagal memuat staf." });
+      }
+    } catch (err: any) {
+      setMsg({ type: "error", text: "Gagal memuat: " + err.message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  function computeNextStaffId(): string {
+    let max = 0;
+    users.forEach((u) => {
+      const m = (u.staffId || "").match(/^USR-(\d+)$/);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > max) max = n;
+      }
+    });
+    return `USR-${String(max + 1).padStart(3, "0")}`;
+  }
+
+  function openCreate() {
+    setCreateForm({ fullName: "", userId: "", password: "", role: "STAFF_GUDANG" });
+    setIdPreview(computeNextStaffId());
+    setMsg(null);
+    setIsCreateOpen(true);
+  }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createForm),
+      });
+      const json = await res.json();
+      if (!json.success) { setMsg({ type: "error", text: json.message }); return; }
+      setMsg({ type: "success", text: json.message || "Staf berhasil dibuat." });
+      setIsCreateOpen(false);
+      await loadUsers();
+    } catch (err: any) {
+      setMsg({ type: "error", text: "Gagal: " + err.message });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function openEdit(u: Staff) {
+    setEditForm({ userId: u.userId || u.docId, fullName: u.fullName, role: u.role, active: u.active !== false });
+    setMsg(null);
+    setIsEditOpen(true);
+  }
+
+  async function handleUpdate(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+      const json = await res.json();
+      if (!json.success) { setMsg({ type: "error", text: json.message }); return; }
+      setMsg({ type: "success", text: json.message || "Staf diperbarui." });
+      setIsEditOpen(false);
+      await loadUsers();
+    } catch (err: any) {
+      setMsg({ type: "error", text: "Gagal: " + err.message });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function openReset(u: Staff) {
+    setResetTarget(u);
+    setResetPw("");
+    setMsg(null);
+    setIsResetOpen(true);
+  }
+
+  async function handleReset(e: React.FormEvent) {
+    e.preventDefault();
+    if (!resetTarget) return;
+    if (resetPw.length < 6) { setMsg({ type: "error", text: "Password minimal 6 karakter." }); return; }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: resetTarget.userId || resetTarget.docId, password: resetPw }),
+      });
+      const json = await res.json();
+      if (!json.success) { setMsg({ type: "error", text: json.message }); return; }
+      setMsg({ type: "success", text: "Password berhasil direset." });
+      setIsResetOpen(false);
+    } catch (err: any) {
+      setMsg({ type: "error", text: "Gagal: " + err.message });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDelete(u: Staff) {
+    const uid = u.userId || u.docId;
+    if (!confirm(`Yakin hapus staf "${uid}"? Tidak bisa dibatalkan.`)) return;
+    try {
+      const res = await fetch("/api/admin/users?userId=" + encodeURIComponent(uid), { method: "DELETE" });
+      const json = await res.json();
+      if (!json.success) { setMsg({ type: "error", text: json.message }); return; }
+      setMsg({ type: "success", text: json.message || "Staf dihapus." });
+      await loadUsers();
+    } catch (err: any) {
+      setMsg({ type: "error", text: "Gagal: " + err.message });
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3.5">
+      <div className="flex justify-between items-center">
+        <div>
+          <span className="text-xs font-bold text-slate-900 uppercase">Akun Pengguna Staf</span>
+          <p className="text-[11px] text-slate-500">Akses operasional gudang dan manajemen akun</p>
+        </div>
+        <button
+          type="button"
+          onClick={openCreate}
+          className="px-3.5 py-1.5 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-semibold rounded-lg shadow-xs"
+        >
+          + Tambah Staf Baru
+        </button>
+      </div>
+
+      {msg && (
+        <div className={`p-2.5 rounded-lg text-xs font-medium ${msg.type === "success" ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-rose-50 text-rose-800 border border-rose-200"}`}>
+          {msg.text}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="p-6 text-center text-slate-500 text-xs">Memuat data staf...</div>
+      ) : (
+        <table className="w-full text-left text-xs">
+          <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+            <tr>
+              <th className="p-2.5">ID Staf</th>
+              <th className="p-2.5">User ID</th>
+              <th className="p-2.5">Nama Lengkap</th>
+              <th className="p-2.5">Role</th>
+              <th className="p-2.5">Status</th>
+              <th className="p-2.5">Aksi</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {users.map((u) => (
+              <tr key={u.docId}>
+                <td className="p-2.5 font-mono font-bold text-slate-900">{u.staffId || "-"}</td>
+                <td className="p-2.5 font-mono">{u.userId || u.username}</td>
+                <td className="p-2.5 font-semibold text-slate-900">{u.fullName}</td>
+                <td className="p-2.5">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800">{u.role}</span>
+                </td>
+                <td className="p-2.5">
+                  {u.active === false ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">NONAKTIF</span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">AKTIF</span>
+                  )}
+                </td>
+                <td className="p-2.5 space-x-1 whitespace-nowrap">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(u)}
+                    className="px-2 py-1 rounded bg-sky-100 hover:bg-sky-200 text-sky-800 text-[10px] font-bold"
+                  >Edit</button>
+                  <button
+                    type="button"
+                    onClick={() => openReset(u)}
+                    className="px-2 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 text-[10px] font-bold"
+                  >Reset PW</button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(u)}
+                    className="px-2 py-1 rounded bg-rose-100 hover:bg-rose-200 text-rose-800 text-[10px] font-bold"
+                  >Hapus</button>
+                </td>
+              </tr>
+            ))}
+            {users.length === 0 && (
+              <tr><td colSpan={6} className="p-4 text-center text-slate-400">Belum ada data staf terdaftar.</td></tr>
+            )}
+          </tbody>
+        </table>
+      )}
+
+      {isCreateOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-slate-900 mb-1">Tambah Staf Baru</h3>
+            <p className="text-xs text-slate-500 mb-4">ID Staf: <span className="font-mono font-bold text-[#9F1239]">{idPreview}</span></p>
+            <form onSubmit={handleCreate} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap</label>
+                <input type="text" required value={createForm.fullName} onChange={(e) => setCreateForm({ ...createForm, fullName: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">User ID (tanpa spasi)</label>
+                <input type="text" required value={createForm.userId} onChange={(e) => setCreateForm({ ...createForm, userId: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Password (min 6 karakter)</label>
+                <input type="text" required minLength={6} value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Role</label>
+                <select value={createForm.role} onChange={(e) => setCreateForm({ ...createForm, role: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                  <option value="STAFF_GUDANG">STAFF_GUDANG</option>
+                  <option value="ADMIN_GUDANG">ADMIN_GUDANG</option>
+                  <option value="ROOT_ADMIN">ROOT_ADMIN</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setIsCreateOpen(false)} disabled={submitting} className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 rounded-lg">Batal</button>
+                <button type="submit" disabled={submitting} className="px-4 py-2 text-xs font-bold text-white bg-[#9F1239] hover:bg-[#881337] rounded-lg">{submitting ? "Menyimpan..." : "Simpan"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isEditOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-slate-900 mb-1">Edit Staf</h3>
+            <p className="text-xs text-slate-500 mb-4 font-mono">{editForm.userId}</p>
+            <form onSubmit={handleUpdate} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap</label>
+                <input type="text" required value={editForm.fullName} onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Role</label>
+                <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                  <option value="STAFF_GUDANG">STAFF_GUDANG</option>
+                  <option value="ADMIN_GUDANG">ADMIN_GUDANG</option>
+                  <option value="ROOT_ADMIN">ROOT_ADMIN</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="sm-active" checked={editForm.active} onChange={(e) => setEditForm({ ...editForm, active: e.target.checked })} className="w-4 h-4" />
+                <label htmlFor="sm-active" className="text-xs font-semibold text-slate-700">Akun Aktif</label>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setIsEditOpen(false)} disabled={submitting} className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 rounded-lg">Batal</button>
+                <button type="submit" disabled={submitting} className="px-4 py-2 text-xs font-bold text-white bg-[#9F1239] hover:bg-[#881337] rounded-lg">{submitting ? "Menyimpan..." : "Simpan"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isResetOpen && resetTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-slate-900 mb-1">Reset Password</h3>
+            <p className="text-xs text-slate-500 mb-4">User: <span className="font-mono font-bold">{resetTarget.userId}</span></p>
+            <form onSubmit={handleReset} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Password Baru (min 6 karakter)</label>
+                <input type="text" required minLength={6} value={resetPw} onChange={(e) => setResetPw(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono" />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setIsResetOpen(false)} disabled={submitting} className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 rounded-lg">Batal</button>
+                <button type="submit" disabled={submitting} className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg">{submitting ? "Menyimpan..." : "Reset"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

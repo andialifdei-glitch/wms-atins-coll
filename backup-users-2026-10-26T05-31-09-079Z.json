@@ -1,0 +1,127 @@
+[
+  {
+    "docId": "admin",
+    "data": {
+      "password": "rootadmin",
+      "id": "admin",
+      "staffId": "ROOT-01",
+      "userId": "admin",
+      "role": "Root Admin",
+      "firebaseUid": "1TmpL3VYYlSQBipubSzqRDqdgb43",
+      "isActive": true,
+      "name": "Super Admin (Root)",
+      "email": "admin@wms.atinscoll.com",
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1792987911,
+        "nanoseconds": 365000000
+      },
+      "fullName": "Super Admin (Root)"
+    }
+  },
+  {
+    "docId": "admin@wms.atinscollection.com",
+    "data": {
+      "name": "Administrator (Root)",
+      "fullName": "Administrator (Root)",
+      "email": "admin@wms.atinscollection.com",
+      "role": "ROOT_ADMIN",
+      "username": "admin",
+      "id": "admin",
+      "userId": "admin"
+    }
+  },
+  {
+    "docId": "atins",
+    "data": {
+      "name": "Atin Supriatin",
+      "createdBy": "Administrator (Root)",
+      "userId": "atins",
+      "role": "STAFF_GUDANG",
+      "staffId": "ST-04",
+      "createdAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1792393542,
+        "nanoseconds": 95000000
+      },
+      "updatedBy": "Administrator (Root)",
+      "fullName": "Atin Supriatin",
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1792393591,
+        "nanoseconds": 90000000
+      },
+      "id": "atins"
+    }
+  },
+  {
+    "docId": "df8SgeHzuZRLENMaIycQEvIIQmt1",
+    "data": {
+      "email": "admin@wms.atinscollection.com",
+      "username": "admin",
+      "uid": "df8SgeHzuZRLENMaIycQEvIIQmt1",
+      "active": true,
+      "role": "ROOT_ADMIN",
+      "fullName": "Root Administrator",
+      "name": "Root Administrator",
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1792157266,
+        "nanoseconds": 912000000
+      },
+      "userId": "admin"
+    }
+  },
+  {
+    "docId": "id.andi",
+    "data": {
+      "name": "Andi (Admin Gudang)",
+      "staffId": "ADM-01",
+      "userId": "id.andi",
+      "id": "id.andi",
+      "email": "id.andi@wms.atinscollection.com",
+      "fullName": "Andi (Admin Gudang)",
+      "role": "ADMIN_GUDANG",
+      "password": "password1"
+    }
+  },
+  {
+    "docId": "id.andia",
+    "data": {
+      "email": "id.andia@wms.atinscoll.com",
+      "active": true,
+      "createdAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1792159633,
+        "nanoseconds": 415000000
+      },
+      "uid": "2bHChzNfh3OPku6VfxZlhgcv31W2",
+      "firebaseUid": "I89VXxut0uWPj6NwGlYERCcGpWG2",
+      "role": "STAFF_GUDANG",
+      "name": "Andi Alif",
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1792223282,
+        "nanoseconds": 413000000
+      },
+      "fullName": "Andi Alif",
+      "createdBy": "Root Administrator",
+      "username": "id.andia",
+      "staffId": "ST-03",
+      "userId": "id.andia"
+    }
+  },
+  {
+    "docId": "id.atins",
+    "data": {
+      "id": "id.atins",
+      "userId": "id.atins",
+      "staffId": "STF-01",
+      "name": "Atins (Staf Gudang)",
+      "password": "password2",
+      "fullName": "Atins (Staf Gudang)",
+      "email": "id.atins@wms.atinscollection.com",
+      "role": "STAFF_GUDANG"
+    }
+  }
+]

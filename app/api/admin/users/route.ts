@@ -1,63 +1,142 @@
-﻿import { NextRequest, NextResponse } from "next/server";
-import { createAuthUser, deleteAuthUser } from "@/lib/firebase-auth";
+import { NextRequest, NextResponse } from "next/server";
+import { adminCreateUser, adminSetPassword, adminDeleteUser, adminDisableUser, getGoogleAccessToken } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
 
 const PROJECT_ID = "gen-lang-client-0158803339";
 const DATABASE_ID = "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f";
+const FIRESTORE_SCOPES = [
+  "https://www.googleapis.com/auth/datastore",
+  "https://www.googleapis.com/auth/cloud-platform",
+];
+
+const ROLE_VALUES = ["ROOT_ADMIN", "ADMIN_GUDANG", "STAFF_GUDANG", "KASIR"] as const;
+type RoleType = typeof ROLE_VALUES[number];
+
+function firestoreDocsBase() {
+  return `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents`;
+}
+
+async function fsFetch(path: string, init: RequestInit = {}) {
+  const token = await getGoogleAccessToken(FIRESTORE_SCOPES);
+  const headers: any = { ...(init.headers || {}) };
+  headers["Authorization"] = `Bearer ${token}`;
+  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  return fetch(path, { ...init, headers, cache: "no-store" });
+}
+
+function readCaller(request: NextRequest) {
+  const sessionCookie = request.cookies.get("admin_session")?.value;
+  if (!sessionCookie) return null;
+  try {
+    const parsed = JSON.parse(decodeURIComponent(sessionCookie));
+    if (!parsed || !parsed.role) return null;
+    return parsed as { uid?: string; id?: string; role?: string; name?: string };
+  } catch {
+    return null;
+  }
+}
+
+function requireRoot(caller: any) {
+  const role = String(caller?.role || "").toUpperCase();
+  return role === "ROOT_ADMIN" || caller?.id === "admin";
+}
+
+async function nextStaffId(): Promise<string> {
+  const counterRef = `${firestoreDocsBase()}/_meta/counters`;
+  let current = 0;
+  const getRes = await fsFetch(counterRef);
+  if (getRes.ok) {
+    const data: any = await getRes.json();
+    const v = data.fields?.staffId?.integerValue;
+    if (v) current = parseInt(v, 10);
+  }
+  const next = current + 1;
+  const idStr = `USR-${String(next).padStart(3, "0")}`;
+  await fsFetch(`${counterRef}?updateMask.fieldPaths=staffId`, {
+    method: "PATCH",
+    body: JSON.stringify({ fields: { staffId: { integerValue: String(next) } } }),
+  });
+  return idStr;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const caller = readCaller(request);
+    if (!caller) return NextResponse.json({ success: false, message: "Autentikasi diperlukan." }, { status: 401 });
+
+    const res = await fsFetch(`${firestoreDocsBase()}/users?pageSize=200`);
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("[GET /api/admin/users] Firestore error:", errText);
+      return NextResponse.json({ success: false, message: "Gagal membaca koleksi users.", detail: errText.substring(0, 300) }, { status: 500 });
+    }
+    const data: any = await res.json();
+    const docs = data.documents || [];
+    const users = docs.map((d: any) => {
+      const fields = d.fields || {};
+      return {
+        docId: d.name.split("/").pop(),
+        uid: fields.uid?.stringValue || "",
+        staffId: fields.staffId?.stringValue || "",
+        userId: fields.userId?.stringValue || "",
+        username: fields.username?.stringValue || "",
+        email: fields.email?.stringValue || "",
+        fullName: fields.fullName?.stringValue || fields.name?.stringValue || "",
+        role: fields.role?.stringValue || "STAFF_GUDANG",
+        active: fields.active?.booleanValue ?? true,
+      };
+    });
+    return NextResponse.json({ success: true, data: users });
+  } catch (e: any) {
+    console.error("[GET /api/admin/users] EXCEPTION:", e.message);
+    return NextResponse.json({ success: false, message: e.message }, { status: 500 });
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const sessionCookie = request.cookies.get("admin_session")?.value;
-    if (!sessionCookie) {
-      return NextResponse.json({ success: false, message: "Autentikasi diperlukan." }, { status: 401 });
-    }
-
-    let caller: any;
-    try {
-      caller = JSON.parse(decodeURIComponent(sessionCookie));
-    } catch {
-      return NextResponse.json({ success: false, message: "Sesi tidak valid." }, { status: 401 });
-    }
-
-    const callerRole = String(caller.role || "").toUpperCase();
-    if (callerRole !== "ROOT_ADMIN" && caller.id !== "admin") {
-      return NextResponse.json({ success: false, message: "Akses ditolak. Khusus ROOT_ADMIN." }, { status: 403 });
-    }
+    const caller = readCaller(request);
+    if (!caller) return NextResponse.json({ success: false, message: "Autentikasi diperlukan." }, { status: 401 });
+    if (!requireRoot(caller)) return NextResponse.json({ success: false, message: "Akses ditolak. Khusus ROOT_ADMIN." }, { status: 403 });
 
     const body = await request.json().catch(() => ({}));
-    const { staffId, fullName, userId, password, role } = body;
+    const { fullName, userId, password, role } = body;
 
     if (!fullName || !userId || !password) {
-      return NextResponse.json({ success: false, message: "Seluruh kolom wajib diisi." }, { status: 400 });
+      return NextResponse.json({ success: false, message: "Nama, User ID, dan Password wajib diisi." }, { status: 400 });
     }
-
     if (String(password).length < 6) {
       return NextResponse.json({ success: false, message: "Password minimal 6 karakter." }, { status: 400 });
     }
 
     const cleanUserId = String(userId).trim().toLowerCase();
-    const assignedRole = role === "ADMIN_GUDANG" ? "ADMIN_GUDANG" : "STAFF_GUDANG";
+    const assignedRole: RoleType = ROLE_VALUES.includes(role) ? role : "STAFF_GUDANG";
     const email = `${cleanUserId}@wms.atinscollection.com`;
+
+    const checkRes = await fsFetch(`${firestoreDocsBase()}/users/${encodeURIComponent(cleanUserId)}`);
+    if (checkRes.ok) {
+      return NextResponse.json({ success: false, message: "User ID sudah terdaftar." }, { status: 409 });
+    }
 
     let authUser: any;
     try {
-      authUser = await createAuthUser(email, String(password).trim(), String(fullName).trim());
+      authUser = await adminCreateUser(email, String(password).trim(), String(fullName).trim());
     } catch (err: any) {
       if (String(err.message).includes("EMAIL_EXISTS")) {
         return NextResponse.json({ success: false, message: "User ID / Email sudah terdaftar." }, { status: 409 });
       }
-      return NextResponse.json({ success: false, message: "Gagal membuat kredensial akun." }, { status: 500 });
+      return NextResponse.json({ success: false, message: "Gagal membuat kredensial akun: " + err.message }, { status: 500 });
     }
 
     const uid = authUser.localId;
-    const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
+    let staffId = "";
+    try { staffId = await nextStaffId(); } catch {}
 
-    const patchUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/users/${cleanUserId}?key=${apiKey}`;
     const firestorePayload = {
       fields: {
         uid: { stringValue: uid },
-        staffId: { stringValue: String(staffId || "") },
+        staffId: { stringValue: staffId },
         userId: { stringValue: cleanUserId },
         username: { stringValue: cleanUserId },
         email: { stringValue: email },
@@ -66,30 +145,136 @@ export async function POST(request: NextRequest) {
         role: { stringValue: assignedRole },
         active: { booleanValue: true },
         createdAt: { timestampValue: new Date().toISOString() },
-        createdBy: { stringValue: caller.name || caller.id },
+        createdBy: { stringValue: caller.name || caller.id || "" },
       },
     };
-
-    const fsRes = await fetch(patchUrl, {
+    const fsRes = await fsFetch(`${firestoreDocsBase()}/users/${encodeURIComponent(cleanUserId)}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(firestorePayload),
     });
-
     if (!fsRes.ok) {
-      await deleteAuthUser(authUser.idToken).catch(() => {});
-      return NextResponse.json(
-        { success: false, message: "Gagal menyinkronkan profil database." },
-        { status: 500 }
-      );
+      try { await adminDeleteUser(uid); } catch {}
+      const errText = await fsRes.text();
+      return NextResponse.json({ success: false, message: "Gagal menyimpan profil user.", detail: errText.substring(0, 300) }, { status: 500 });
     }
 
     return NextResponse.json({
       success: true,
-      message: `Pengguna [${cleanUserId}] berhasil dibuat dengan role ${assignedRole}.`,
-      data: { uid, userId: cleanUserId, role: assignedRole },
+      message: `User [${cleanUserId}] berhasil dibuat (${assignedRole}, ${staffId}).`,
+      data: { uid, userId: cleanUserId, staffId, role: assignedRole },
     });
   } catch (error: any) {
-    return NextResponse.json({ success: false, message: error.message || "Terjadi kesalahan server internal." }, { status: 500 });
+    console.error("[POST /api/admin/users] EXCEPTION:", error.message);
+    return NextResponse.json({ success: false, message: error.message || "Terjadi kesalahan server." }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const caller = readCaller(request);
+    if (!caller) return NextResponse.json({ success: false, message: "Autentikasi diperlukan." }, { status: 401 });
+    if (!requireRoot(caller)) return NextResponse.json({ success: false, message: "Akses ditolak. Khusus ROOT_ADMIN." }, { status: 403 });
+
+    const body = await request.json().catch(() => ({}));
+    const { userId, fullName, role, active, password } = body;
+    if (!userId) return NextResponse.json({ success: false, message: "userId wajib." }, { status: 400 });
+
+    const cleanUserId = String(userId).trim().toLowerCase();
+    const getRes = await fsFetch(`${firestoreDocsBase()}/users/${encodeURIComponent(cleanUserId)}`);
+    if (!getRes.ok) return NextResponse.json({ success: false, message: "User tidak ditemukan." }, { status: 404 });
+    const docData: any = await getRes.json();
+    const uid = docData.fields?.uid?.stringValue;
+    if (!uid) return NextResponse.json({ success: false, message: "User tidak punya uid." }, { status: 500 });
+
+    if (password) {
+      if (String(password).length < 6) return NextResponse.json({ success: false, message: "Password minimal 6 karakter." }, { status: 400 });
+      try {
+        await adminSetPassword(uid, String(password).trim());
+      } catch (err: any) {
+        return NextResponse.json({ success: false, message: "Gagal set password: " + err.message }, { status: 500 });
+      }
+    }
+
+    const updateFields: any = {};
+    const updateMask: string[] = [];
+    if (fullName !== undefined) {
+      updateFields.fullName = { stringValue: String(fullName).trim() };
+      updateFields.name = { stringValue: String(fullName).trim() };
+      updateMask.push("fullName", "name");
+    }
+    if (role !== undefined) {
+      if (!ROLE_VALUES.includes(role)) return NextResponse.json({ success: false, message: "Role tidak valid." }, { status: 400 });
+      updateFields.role = { stringValue: role };
+      updateMask.push("role");
+    }
+    if (active !== undefined) {
+      updateFields.active = { booleanValue: Boolean(active) };
+      updateMask.push("active");
+      // Sinkronkan disabled flag di Firebase Auth agar user tidak bisa login ke Firebase
+      try {
+        await adminDisableUser(uid, !Boolean(active));
+      } catch (err: any) {
+        console.error("[PATCH adminDisableUser] warning:", err.message);
+        // tidak return 500 — Firestore tetap diupdate; kalau perlu rollback, log saja
+      }
+    }
+    updateFields.updatedAt = { timestampValue: new Date().toISOString() };
+    updateMask.push("updatedAt");
+
+    if (updateMask.length > 0) {
+      const maskQuery = updateMask.map((f) => `updateMask.fieldPaths=${f}`).join("&");
+      const patchUrl = `${firestoreDocsBase()}/users/${encodeURIComponent(cleanUserId)}?${maskQuery}`;
+      const fsRes = await fsFetch(patchUrl, {
+        method: "PATCH",
+        body: JSON.stringify({ fields: updateFields }),
+      });
+      if (!fsRes.ok) {
+        const errText = await fsRes.text();
+        return NextResponse.json({ success: false, message: "Gagal update profil.", detail: errText.substring(0, 300) }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ success: true, message: "User diperbarui." });
+  } catch (e: any) {
+    console.error("[PATCH /api/admin/users] EXCEPTION:", e.message);
+    return NextResponse.json({ success: false, message: e.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const caller = readCaller(request);
+    if (!caller) return NextResponse.json({ success: false, message: "Autentikasi diperlukan." }, { status: 401 });
+    if (!requireRoot(caller)) return NextResponse.json({ success: false, message: "Akses ditolak. Khusus ROOT_ADMIN." }, { status: 403 });
+
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get("userId");
+    if (!userId) return NextResponse.json({ success: false, message: "userId wajib." }, { status: 400 });
+    const cleanUserId = String(userId).trim().toLowerCase();
+    if (cleanUserId === "admin") return NextResponse.json({ success: false, message: "Tidak boleh hapus akun admin utama." }, { status: 400 });
+
+    const getRes = await fsFetch(`${firestoreDocsBase()}/users/${encodeURIComponent(cleanUserId)}`);
+    if (!getRes.ok) return NextResponse.json({ success: false, message: "User tidak ditemukan." }, { status: 404 });
+    const docData: any = await getRes.json();
+    const uid = docData.fields?.uid?.stringValue;
+
+    if (uid) {
+      try {
+        await adminDeleteUser(uid);
+      } catch (err: any) {
+        return NextResponse.json({ success: false, message: "Gagal hapus Firebase Auth: " + err.message }, { status: 500 });
+      }
+    }
+
+    const delRes = await fsFetch(`${firestoreDocsBase()}/users/${encodeURIComponent(cleanUserId)}`, { method: "DELETE" });
+    if (!delRes.ok) {
+      const errText = await delRes.text();
+      return NextResponse.json({ success: false, message: "Profil firestore gagal dihapus.", detail: errText.substring(0, 300) }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, message: "User dihapus." });
+  } catch (e: any) {
+    console.error("[DELETE /api/admin/users] EXCEPTION:", e.message);
+    return NextResponse.json({ success: false, message: e.message }, { status: 500 });
   }
 }

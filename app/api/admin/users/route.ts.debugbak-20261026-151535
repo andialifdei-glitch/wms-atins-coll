@@ -1,0 +1,263 @@
+import { NextRequest, NextResponse } from "next/server";
+import { adminCreateUser, adminSetPassword, adminDeleteUser } from "@/lib/firebase-admin";
+
+export const dynamic = "force-dynamic";
+
+const PROJECT_ID = "gen-lang-client-0158803339";
+const DATABASE_ID = "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f";
+
+const ROLE_VALUES = ["ROOT_ADMIN", "ADMIN_GUDANG", "STAFF_GUDANG"] as const;
+type RoleType = typeof ROLE_VALUES[number];
+
+function firestoreBase() {
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyBZ8Re3MNW5It7lcLYPR0rNitlyumj7O-k";
+  return {
+    apiKey,
+    docsBase: `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents`,
+  };
+}
+
+function readCaller(request: NextRequest) {
+  const sessionCookie = request.cookies.get("admin_session")?.value;
+  if (!sessionCookie) return null;
+  try {
+    const parsed = JSON.parse(decodeURIComponent(sessionCookie));
+    if (!parsed || !parsed.role) return null;
+    return parsed as { uid?: string; id?: string; role?: string; name?: string };
+  } catch {
+    return null;
+  }
+}
+
+function requireRoot(caller: any) {
+  const role = String(caller?.role || "").toUpperCase();
+  return role === "ROOT_ADMIN" || caller?.id === "admin";
+}
+
+// ============ AUTO INCREMENT STAFF ID ============
+async function nextStaffId(): Promise<string> {
+  const { apiKey, docsBase } = firestoreBase();
+  const counterRef = `${docsBase}/_meta/counters`;
+
+  // Ambil counter sekarang
+  const getRes = await fetch(`${counterRef}?key=${apiKey}`, { cache: "no-store" });
+  let current = 0;
+  if (getRes.ok) {
+    const data: any = await getRes.json();
+    const v = data.fields?.staffId?.integerValue;
+    if (v) current = parseInt(v, 10);
+  }
+  const next = current + 1;
+  const idStr = `USR-${String(next).padStart(3, "0")}`;
+
+  // Simpan kembali (PATCH)
+  await fetch(`${counterRef}?key=${apiKey}&updateMask.fieldPaths=staffId`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: { staffId: { integerValue: String(next) } } }),
+  });
+  return idStr;
+}
+
+// ============ GET — LIST USERS ============
+export async function GET(request: NextRequest) {
+  const caller = readCaller(request);
+  if (!caller) return NextResponse.json({ success: false, message: "Autentikasi diperlukan." }, { status: 401 });
+
+  const { apiKey, docsBase } = firestoreBase();
+  const res = await fetch(`${docsBase}/users?key=${apiKey}&pageSize=200`, { cache: "no-store" });
+  if (!res.ok) return NextResponse.json({ success: false, message: "Gagal membaca koleksi users." }, { status: 500 });
+  const data: any = await res.json();
+  const docs = data.documents || [];
+  const users = docs.map((d: any) => {
+    const fields = d.fields || {};
+    return {
+      docId: d.name.split("/").pop(),
+      uid: fields.uid?.stringValue || "",
+      staffId: fields.staffId?.stringValue || "",
+      userId: fields.userId?.stringValue || "",
+      username: fields.username?.stringValue || "",
+      email: fields.email?.stringValue || "",
+      fullName: fields.fullName?.stringValue || fields.name?.stringValue || "",
+      role: fields.role?.stringValue || "STAFF_GUDANG",
+      active: fields.active?.booleanValue ?? true,
+    };
+  });
+  return NextResponse.json({ success: true, data: users });
+}
+
+// ============ POST — CREATE USER ============
+export async function POST(request: NextRequest) {
+  const caller = readCaller(request);
+  if (!caller) return NextResponse.json({ success: false, message: "Autentikasi diperlukan." }, { status: 401 });
+  if (!requireRoot(caller)) return NextResponse.json({ success: false, message: "Akses ditolak. Khusus ROOT_ADMIN." }, { status: 403 });
+
+  const body = await request.json().catch(() => ({}));
+  const { fullName, userId, password, role } = body;
+
+  if (!fullName || !userId || !password) {
+    return NextResponse.json({ success: false, message: "Nama, User ID, dan Password wajib diisi." }, { status: 400 });
+  }
+  if (String(password).length < 6) {
+    return NextResponse.json({ success: false, message: "Password minimal 6 karakter." }, { status: 400 });
+  }
+
+  const cleanUserId = String(userId).trim().toLowerCase();
+  const assignedRole: RoleType = ROLE_VALUES.includes(role) ? role : "STAFF_GUDANG";
+  const email = `${cleanUserId}@wms.atinscollection.com`;
+  const { apiKey, docsBase } = firestoreBase();
+
+  // Cek eksis dulu di firestore
+  const checkRes = await fetch(`${docsBase}/users/${encodeURIComponent(cleanUserId)}?key=${apiKey}`, { cache: "no-store" });
+  if (checkRes.ok) {
+    return NextResponse.json({ success: false, message: "User ID sudah terdaftar." }, { status: 409 });
+  }
+
+  // Buat akun Firebase Auth
+  let authUser: any;
+  try {
+    authUser = await adminCreateUser(email, String(password).trim(), String(fullName).trim());
+  } catch (err: any) {
+    if (String(err.message).includes("EMAIL_EXISTS")) {
+      return NextResponse.json({ success: false, message: "User ID / Email sudah terdaftar." }, { status: 409 });
+    }
+    return NextResponse.json({ success: false, message: "Gagal membuat kredensial akun: " + err.message }, { status: 500 });
+  }
+
+  const uid = authUser.localId;
+  let staffId = "";
+  try { staffId = await nextStaffId(); } catch { staffId = ""; }
+
+  // Tulis profil ke Firestore
+  const patchUrl = `${docsBase}/users/${encodeURIComponent(cleanUserId)}?key=${apiKey}`;
+  const firestorePayload = {
+    fields: {
+      uid: { stringValue: uid },
+      staffId: { stringValue: staffId },
+      userId: { stringValue: cleanUserId },
+      username: { stringValue: cleanUserId },
+      email: { stringValue: email },
+      fullName: { stringValue: String(fullName).trim() },
+      name: { stringValue: String(fullName).trim() },
+      role: { stringValue: assignedRole },
+      active: { booleanValue: true },
+      createdAt: { timestampValue: new Date().toISOString() },
+      createdBy: { stringValue: caller.name || caller.id || "" },
+    },
+  };
+  const fsRes = await fetch(patchUrl, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(firestorePayload),
+  });
+  if (!fsRes.ok) {
+    // Rollback Auth user
+    try { await adminDeleteUser(uid); } catch {}
+    return NextResponse.json({ success: false, message: "Gagal menyimpan profil user." }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    success: true,
+    message: `User [${cleanUserId}] berhasil dibuat (${assignedRole}, ${staffId}).`,
+    data: { uid, userId: cleanUserId, staffId, role: assignedRole },
+  });
+}
+
+// ============ PATCH — UPDATE USER ============
+export async function PATCH(request: NextRequest) {
+  const caller = readCaller(request);
+  if (!caller) return NextResponse.json({ success: false, message: "Autentikasi diperlukan." }, { status: 401 });
+  if (!requireRoot(caller)) return NextResponse.json({ success: false, message: "Akses ditolak. Khusus ROOT_ADMIN." }, { status: 403 });
+
+  const body = await request.json().catch(() => ({}));
+  const { userId, fullName, role, active, password } = body;
+  if (!userId) return NextResponse.json({ success: false, message: "userId wajib." }, { status: 400 });
+
+  const cleanUserId = String(userId).trim().toLowerCase();
+  const { apiKey, docsBase } = firestoreBase();
+
+  // Ambil dokumen
+  const getRes = await fetch(`${docsBase}/users/${encodeURIComponent(cleanUserId)}?key=${apiKey}`, { cache: "no-store" });
+  if (!getRes.ok) return NextResponse.json({ success: false, message: "User tidak ditemukan." }, { status: 404 });
+  const docData: any = await getRes.json();
+  const fields = docData.fields || {};
+  const uid = fields.uid?.stringValue;
+  if (!uid) return NextResponse.json({ success: false, message: "User tidak punya uid (belum tersinkron dengan Firebase Auth)." }, { status: 500 });
+
+  // Update password kalau diminta
+  if (password) {
+    if (String(password).length < 6) return NextResponse.json({ success: false, message: "Password minimal 6 karakter." }, { status: 400 });
+    try {
+      await adminSetPassword(uid, String(password).trim());
+    } catch (err: any) {
+      return NextResponse.json({ success: false, message: "Gagal set password: " + err.message }, { status: 500 });
+    }
+  }
+
+  // Update field Firestore
+  const updateFields: any = {};
+  const updateMask: string[] = [];
+  if (fullName !== undefined) {
+    updateFields.fullName = { stringValue: String(fullName).trim() };
+    updateFields.name = { stringValue: String(fullName).trim() };
+    updateMask.push("fullName", "name");
+  }
+  if (role !== undefined) {
+    if (!ROLE_VALUES.includes(role)) return NextResponse.json({ success: false, message: "Role tidak valid." }, { status: 400 });
+    updateFields.role = { stringValue: role };
+    updateMask.push("role");
+  }
+  if (active !== undefined) {
+    updateFields.active = { booleanValue: Boolean(active) };
+    updateMask.push("active");
+  }
+  updateFields.updatedAt = { timestampValue: new Date().toISOString() };
+  updateMask.push("updatedAt");
+
+  if (updateMask.length > 0) {
+    const maskQuery = updateMask.map(f => `updateMask.fieldPaths=${f}`).join("&");
+    const patchUrl = `${docsBase}/users/${encodeURIComponent(cleanUserId)}?key=${apiKey}&${maskQuery}`;
+    const fsRes = await fetch(patchUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: updateFields }),
+    });
+    if (!fsRes.ok) {
+      return NextResponse.json({ success: false, message: "Gagal update profil." }, { status: 500 });
+    }
+  }
+
+  return NextResponse.json({ success: true, message: "User diperbarui." });
+}
+
+// ============ DELETE — HAPUS USER ============
+export async function DELETE(request: NextRequest) {
+  const caller = readCaller(request);
+  if (!caller) return NextResponse.json({ success: false, message: "Autentikasi diperlukan." }, { status: 401 });
+  if (!requireRoot(caller)) return NextResponse.json({ success: false, message: "Akses ditolak. Khusus ROOT_ADMIN." }, { status: 403 });
+
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get("userId");
+  if (!userId) return NextResponse.json({ success: false, message: "userId wajib." }, { status: 400 });
+  const cleanUserId = String(userId).trim().toLowerCase();
+  if (cleanUserId === "admin") return NextResponse.json({ success: false, message: "Tidak boleh hapus akun admin utama." }, { status: 400 });
+
+  const { apiKey, docsBase } = firestoreBase();
+  const getRes = await fetch(`${docsBase}/users/${encodeURIComponent(cleanUserId)}?key=${apiKey}`, { cache: "no-store" });
+  if (!getRes.ok) return NextResponse.json({ success: false, message: "User tidak ditemukan." }, { status: 404 });
+  const docData: any = await getRes.json();
+  const uid = docData.fields?.uid?.stringValue;
+
+  // Hapus dari Firebase Auth (kalau punya uid)
+  if (uid) {
+    try { await adminDeleteUser(uid); } catch (err: any) {
+      return NextResponse.json({ success: false, message: "Gagal hapus Firebase Auth: " + err.message }, { status: 500 });
+    }
+  }
+
+  // Hapus dokumen Firestore
+  const delRes = await fetch(`${docsBase}/users/${encodeURIComponent(cleanUserId)}?key=${apiKey}`, { method: "DELETE" });
+  if (!delRes.ok) return NextResponse.json({ success: false, message: "Profil firestore gagal dihapus." }, { status: 500 });
+
+  return NextResponse.json({ success: true, message: "User dihapus." });
+}

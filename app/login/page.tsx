@@ -3,20 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
-import { userDb as db } from "@/lib/firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { userDb as db, auth } from "@/lib/firebase";
 
-async function sha256Hex(message: string): Promise<string> {
-  if (typeof crypto !== "undefined" && crypto.subtle) {
-    const msgUint8 = new TextEncoder().encode(message);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  }
-  return message;
-}
-
-function normalizeRole(rawRole: string): "ROOT_ADMIN" | "ADMIN_GUDANG" | "STAFF_GUDANG" {
+function normalizeRole(rawRole: string): "ROOT_ADMIN" | "ADMIN_GUDANG" | "STAFF_GUDANG" | "KASIR" {
   const r = (rawRole || "").trim().toUpperCase();
+  if (r === "KASIR" || r.includes("KASIR")) return "KASIR";
   if (r.includes("ROOT") || r === "ADMIN" || r === "SUPER ADMIN") return "ROOT_ADMIN";
   if (r.includes("ADMIN") || r.includes("GUDANG_ADMIN")) return "ADMIN_GUDANG";
   return "STAFF_GUDANG";
@@ -47,10 +39,28 @@ export default function LoginPage() {
       const cleanInput = rawInput.includes("@") ? rawInput.split("@")[0] : rawInput;
       const lowerInput = cleanInput.toLowerCase();
 
+      // 1. Verifikasi kredensial ke Firebase Authentication.
+      //    Password di-hash & disimpan oleh Firebase, bukan di Firestore.
+      const emailForAuth = `${lowerInput}@wms.atinscollection.com`;
+      try {
+        await signInWithEmailAndPassword(auth, emailForAuth, inputPass);
+      } catch (authErr: any) {
+        const code = String(authErr?.code || "");
+        if (code.includes("too-many-requests")) {
+          setErrorMsg("Terlalu banyak percobaan. Coba lagi beberapa menit lagi.");
+        } else if (code.includes("user-disabled")) {
+          setErrorMsg("Akun dinonaktifkan. Hubungi Administrator.");
+        } else {
+          setErrorMsg("Kombinasi User ID dan Password tidak sah.");
+        }
+        setLoading(false);
+        return;
+      }
+
+      // 2. Ambil profil (role, nama, status aktif) dari Firestore.
       let userData: any = null;
       let finalDocId = lowerInput;
 
-      // 1. Cek langsung ke Firestore via browser
       try {
         const docRef = doc(db, "users", lowerInput);
         const docSnap = await getDoc(docRef);
@@ -62,7 +72,6 @@ export default function LoginPage() {
         console.warn("Direct doc read warning:", e);
       }
 
-      // 2. Jika tidak ada, cari via query field
       if (!userData) {
         const usersCol = collection(db, "users");
         const fields = ["userId", "username", "email"];
@@ -79,7 +88,6 @@ export default function LoginPage() {
         }
       }
 
-      // 3. Cek dengan casing asli jika ada perbedaan huruf besar/kecil
       if (!userData && cleanInput !== lowerInput) {
         try {
           const docRef = doc(db, "users", cleanInput);
@@ -92,7 +100,7 @@ export default function LoginPage() {
       }
 
       if (!userData) {
-        setErrorMsg("Pengguna tidak ditemukan. Periksa kembali User ID Anda.");
+        setErrorMsg("Profil pengguna tidak ditemukan. Hubungi Administrator.");
         setLoading(false);
         return;
       }
@@ -103,26 +111,7 @@ export default function LoginPage() {
         return;
       }
 
-      // 4. Verifikasi Password (Plain text atau SHA-256)
-      const storedPass = String(userData.password || "");
-      let isMatch = false;
-
-      if (storedPass === inputPass) {
-        isMatch = true;
-      } else {
-        const hashed = await sha256Hex(inputPass);
-        if (hashed.toLowerCase() === storedPass.toLowerCase()) {
-          isMatch = true;
-        }
-      }
-
-      if (!isMatch) {
-        setErrorMsg("Kombinasi User ID dan Password tidak sah.");
-        setLoading(false);
-        return;
-      }
-
-      // 5. Buat Sesi Pengguna
+      // 3. Buat sesi pengguna.
       const uId = userData.userId || userData.username || finalDocId;
       const sessionPayload = {
         uid: userData.uid || finalDocId,
@@ -132,14 +121,11 @@ export default function LoginPage() {
         name: userData.fullName || userData.name || uId,
       };
 
-      // Simpan session di LocalStorage
       localStorage.setItem("wms_user_session", JSON.stringify(sessionPayload));
 
-      // Simpan session di Cookie agar middleware/SSR rute lain mendeteksi user sudah login
       const sessionString = encodeURIComponent(JSON.stringify(sessionPayload));
       document.cookie = `admin_session=${sessionString}; path=/; max-age=86400; SameSite=Lax`;
 
-      // Redirect ke Dashboard Utama
       router.push("/");
       router.refresh();
     } catch (err: any) {

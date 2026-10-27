@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import KonterDashboardView from '@/components/konter/KonterDashboardView';
 import dynamic from "next/dynamic";
 
@@ -35,6 +35,7 @@ import StockOpnameModal from "@/components/modals/StockOpnameModal";
 import SalesOrderModal from "@/components/modals/SalesOrderModal";
 import CreatePurchaseOrderModal from "@/components/modals/CreatePurchaseOrderModal";
 import NotificationBell from "@/components/notifications/NotificationBell";
+import StaffManager from "./StaffManager";
 
 type MainTab =
   | "dashboard"
@@ -1344,6 +1345,29 @@ export default function DashboardClient() {
 
     const fullFormattedAddress = `${customerForm.detailAddress ? customerForm.detailAddress.trim() + ", " : ""}Desa/Kel. ${customerForm.villageName}, Kec. ${customerForm.districtName}, ${customerForm.regencyName}, ${customerForm.provinceName}${customerForm.postalCode ? " " + customerForm.postalCode : ""}`;
 
+    // === AUTO RESOLVE destinationId dari Komerce untuk cek ongkir ===
+    let resolvedDestinationId: number | null = null;
+    try {
+      const r = await fetch("/api/shipping/resolve-destination", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          villageName: customerForm.villageName,
+          districtName: customerForm.districtName,
+          regencyName: customerForm.regencyName,
+          provinceName: customerForm.provinceName,
+        }),
+      });
+      const json = await r.json();
+      if (json.success && json.data?.destinationId) {
+        resolvedDestinationId = Number(json.data.destinationId);
+      } else {
+        console.warn("[customer] resolve destination gagal:", json.message);
+      }
+    } catch (e: any) {
+      console.warn("[customer] resolve destination exception:", e.message);
+    }
+
     try {
       setLoading(true);
       if (customerModalMode === "create") {
@@ -1371,6 +1395,7 @@ export default function DashboardClient() {
             postalCode: customerForm.postalCode.trim(),
             address: fullFormattedAddress,
             displayAddress: fullFormattedAddress,
+destinationId: resolvedDestinationId,
             createdAt: serverTimestamp(),
             createdBy: currentUser.name || currentUser.id,
           });
@@ -1394,6 +1419,7 @@ export default function DashboardClient() {
           postalCode: customerForm.postalCode.trim(),
           address: fullFormattedAddress,
           displayAddress: fullFormattedAddress,
+destinationId: resolvedDestinationId,
           updatedAt: serverTimestamp(),
           updatedBy: currentUser.name || currentUser.id,
         });
@@ -3243,55 +3269,7 @@ export default function DashboardClient() {
               </div>
 
               {/* 7.1 STAF GUDANG */}
-              {humanSubTab === "staff" && (
-                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3.5">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 uppercase">Akun Pengguna Staf</span>
-                      <p className="text-[11px] text-slate-500">Akses operasional gudang dan manajemen akun</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const fallbackId = `ST-${String(usersList.length + 1).padStart(2, "0")}`;
-                        setStaffForm({ staffId: fallbackId, fullName: "", userId: "", password: "" });
-                        setStaffModalMode("create");
-                        setIsStaffModalOpen(true);
-                      }}
-                      className="px-3.5 py-1.5 bg-[#9F1239] hover:bg-[#881337] text-white text-xs font-semibold rounded-lg shadow-xs"
-                    >
-                      + Tambah Staf Baru
-                    </button>
-                  </div>
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                      <tr>
-                        <th className="p-2.5">ID Staf</th>
-                        <th className="p-2.5">User ID</th>
-                        <th className="p-2.5">Nama Lengkap</th>
-                        <th className="p-2.5">Role</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {usersList.map((u, idx) => (
-                        <tr key={`${u.id || u.userId || "user"}-${idx}`}>
-                          <td className="p-2.5 font-mono font-bold text-slate-900">{u.staffId || `ST-${String(idx + 1).padStart(2, "0")}`}</td>
-                          <td className="p-2.5 font-mono">{u.userId || u.username}</td>
-                          <td className="p-2.5 font-semibold text-slate-900">{u.fullName || u.name}</td>
-                          <td className="p-2.5">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800">
-                              {u.role || "STAFF_GUDANG"}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                      {usersList.length === 0 && (
-                        <tr><td colSpan={4} className="p-4 text-center text-slate-400">Belum ada data staf terdaftar.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {humanSubTab === "staff" && (<StaffManager />)}
 
               {/* 7.2 SUPPLIER REKANAN */}
               {humanSubTab === "suppliers" && (

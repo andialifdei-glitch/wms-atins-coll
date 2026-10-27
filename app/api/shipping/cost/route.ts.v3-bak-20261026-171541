@@ -1,0 +1,156 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getGoogleAccessToken } from "@/lib/firebase-admin";
+
+export const dynamic = "force-dynamic";
+
+const PROJECT_ID = "gen-lang-client-0158803339";
+const DATABASE_ID = "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f";
+const KOMERCE_BASE = "https://rajaongkir.komerce.id/api/v1";
+const DEFAULT_FALLBACK_KEY = "KYr1MRBPb4a4667b8ed8a865DPqsFp5n";
+const DATABASE_SCOPES = ["https://www.googleapis.com/auth/datastore", "https://www.googleapis.com/auth/cloud-platform"];
+
+async function verifySessionViaAdmin(request: NextRequest) {
+  const cookie = request.cookies.get("admin_session")?.value;
+  if (!cookie) { console.error("[verifySession] NO COOKIE"); return null; }
+  try {
+    const parsed = JSON.parse(decodeURIComponent(cookie));
+    console.error("[verifySession] parsed uid =", parsed?.uid, "role =", parsed?.role);
+    if (!parsed?.uid || !parsed?.role) { console.error("[verifySession] MISSING uid/role"); return null; }
+
+    const token = await getGoogleAccessToken(DATABASE_SCOPES);
+    const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/users/${encodeURIComponent(parsed.uid)}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    console.error("[verifySession] Firestore status =", res.status);
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.error("[verifySession] Firestore err:", errBody.slice(0, 300));
+      return null;
+    }
+    const data: any = await res.json();
+    const isActive = data.fields?.active?.booleanValue ?? true;
+    console.error("[verifySession] isActive =", isActive);
+    if (!isActive) { console.error("[verifySession] INACTIVE USER"); return null; }
+    return parsed;
+  } catch (e: any) {
+    console.error("[verifySession] EXCEPTION:", e.message);
+    return null;
+  }
+}
+
+async function getRajaOngkirKey(): Promise<string> {
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
+  if (!apiKey) return DEFAULT_FALLBACK_KEY;
+  try {
+    // Baca dari settings via Admin SDK agar lepas dari Firestore Rules
+    const token = await getGoogleAccessToken(DATABASE_SCOPES);
+    const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/settings/store_info`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const j: any = await res.json();
+      const val = j.fields?.rajaOngkirApiKey?.stringValue;
+      if (val) return val;
+    }
+  } catch (err) {
+    console.error("[shipping/cost] get key error:", err);
+  }
+  return DEFAULT_FALLBACK_KEY;
+}
+
+export async function POST(request: NextRequest) {
+  const user = await verifySessionViaAdmin(request);
+  if (!user) {
+    return NextResponse.json({ success: false, message: "Akses ditolak. Sesi tidak sah." }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { origin, destination, weight } = body;
+
+    const originSubdistrict = Number(origin) || 4997;
+    const destSubdistrict = Number(destination);
+    const finalWeight = Math.max(1000, Number(weight) || 1000);
+
+    if (!destSubdistrict || destSubdistrict <= 0) {
+      return NextResponse.json({ success: false, message: "ID destinasi tidak valid." }, { status: 400 });
+    }
+
+    const rajaOngkirKey = await getRajaOngkirKey();
+    const supportedCouriers = ["wahana", "lion", "spx"];
+    const allRates: any[] = [];
+
+    if (rajaOngkirKey) {
+      for (const courier of supportedCouriers) {
+        try {
+          const form = new URLSearchParams();
+          form.append("origin", String(originSubdistrict));
+          form.append("destination", String(destSubdistrict));
+          form.append("weight", String(finalWeight));
+          form.append("courier", courier);
+
+          const res = await fetch(`${KOMERCE_BASE}/calculate/domestic-cost`, {
+            method: "POST",
+            headers: {
+              key: rajaOngkirKey,
+              "Content-Type": "application/x-www-form-urlencoded",
+              Accept: "application/json",
+            },
+            body: form.toString(),
+          });
+
+          if (!res.ok) {
+            const txt = await res.text().catch(() => "");
+            console.error(`[shipping/cost] ${courier} HTTP ${res.status}: ${txt.slice(0, 200)}`);
+            continue;
+          }
+
+          const data: any = await res.json();
+          const items = Array.isArray(data?.data) ? data.data : [];
+
+          for (const it of items) {
+            const courierCode = String(it.code || courier).toUpperCase();
+            const sName = String(it.service || "").trim();
+            const sDesc = String(it.description || "").trim();
+            const costVal = Number(it.cost) || 0;
+            const etd = String(it.etd || "1-3");
+            if (costVal <= 0) continue;
+
+            // Khusus Wahana: hanya layanan Economy
+            if (courierCode === "WAHANA") {
+              const isEconomy = sName.toLowerCase().includes("eco") || sDesc.toLowerCase().includes("eco");
+              if (!isEconomy) continue;
+            }
+
+            allRates.push({
+              courier: courierCode,
+              serviceName: `${courierCode} - ${sName || "REG"}`,
+              cost: costVal,
+              etd: etd.includes("Hari") ? etd : `${etd} Hari`,
+            });
+          }
+        } catch (err: any) {
+          console.error(`[shipping/cost] ${courier} exception:`, err.message);
+        }
+      }
+    }
+
+    if (allRates.length === 0) {
+      // Fallback kalau semua kurir gagal (API key tidak valid / offline)
+      allRates.push(
+        { courier: "WAHANA", serviceName: "WAHANA - Economy", cost: 10000, etd: "3-4 Hari" },
+        { courier: "LION", serviceName: "LION - REGPACK", cost: 13000, etd: "1-2 Hari" },
+        { courier: "SPX", serviceName: "SPX - Standard", cost: 11000, etd: "1-2 Hari" }
+      );
+    }
+
+    return NextResponse.json({ success: true, rates: allRates });
+  } catch (err: any) {
+    console.error("[shipping/cost] catch:", err.message);
+    return NextResponse.json({ success: false, message: "Gagal menghitung tarif ongkir." }, { status: 500 });
+  }
+}

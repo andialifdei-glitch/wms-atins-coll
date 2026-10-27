@@ -64,7 +64,7 @@ export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userR
                 : "text-slate-300 hover:bg-slate-800 hover:text-white")
             }
           >
-            <span>ÃƒÂ°Ã…Â¸
+            <span>🏠</span>
             <span>Dashboard Utama</span>
           </Link>
         </div>
@@ -77,11 +77,11 @@ export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userR
             className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
           >
             <div className="flex items-center gap-2">
-              <span className="text-rose-400">ÃƒÂ°Ã…Â¸
+              <span className="text-rose-400">🏷️</span>
               <span className="font-semibold text-rose-300">Atin&apos;s Collection</span>
             </div>
             <span className={"text-[10px] text-slate-400 transform transition-transform " + (openWms ? "rotate-180" : "")}>
-              ÃƒÂ¢
+              ▾
             </span>
           </button>
 
@@ -118,11 +118,11 @@ export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userR
             className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
           >
             <div className="flex items-center gap-2">
-              <span className="text-emerald-400">ÃƒÂ¢Ã…Â¡Ã‚Â¡</span>
+              <span className="text-emerald-400">⚡</span>
               <span className="font-semibold text-emerald-300">Konter & PPOB</span>
             </div>
             <span className={"text-[10px] text-slate-400 transform transition-transform " + (openKonter ? "rotate-180" : "")}>
-              ÃƒÂ¢
+              ▾
             </span>
           </button>
 
@@ -161,15 +161,12 @@ export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userR
           <button
             type="button"
             onClick={onLogout}
-            className="w-full text-left px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-300 hover:bg-rose-500/20 border border-rose-500/30 transition"
           >
-            <span>ÃƒÂ°Ã…Â¸Ã…Â¡Ã‚Âª</span>
-            <span>Keluar Sistem</span>
+            Keluar / Logout
           </button>
         )}
       </div>
     </aside>
   );
 }
-
-export default Sidebar;

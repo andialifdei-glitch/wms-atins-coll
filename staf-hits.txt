@@ -1,0 +1,58 @@
+﻿
+LineNumber Line                                                                                         
+---------- ----                                                                                         
+        23   updateDoc,                                                                                 
+        24   deleteDoc,                                                                                 
+        25   setDoc,                                                                                    
+       217   const [humanSubTab, setHumanSubTab] = useState<"staff" | "suppliers" | "customers">("sta...
+       324   // Staff Form State                                                                        
+       325   const [staffModalMode, setStaffModalMode] = useState<"create" | "edit">("create");         
+       326   const [staffForm, setStaffForm] = useState({ staffId: "", fullName: "", userId: "", pass...
+       327   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);                           
+       413   const isStaff = useMemo(() => {                                                            
+       415     return roleClean.includes("STAFF");                                                      
+       422     async function handleSavePurchaseOrder(payload: any) {                                   
+       477   async function handleSaveProduct(savedData: any) {                                         
+       482         await updateDoc(doc(db, "products", savedData.sku), {                                
+       562         pSnap, fSnap, cSnap, soSnap, doSnap, poSnap, rcvSnap, sopSnap, adjSnap, mvSnap, se...
+       575         getDocs(query(collection(db, "users"), limit(100))),                                 
+       592       const foundSettings = setDocSnap.docs.find((d) => d.id === "store_info");              
+       618             setUsersList(d.users || []);                                                     
+       826       await updateDoc(doc(db, "stock_opnames", targetId), {                                  
+       944       await updateDoc(doc(db, "sales_orders", so.soId || so.id), {                           
+       962       await updateDoc(doc(db, "sales_orders", so.soId || so.id), {                           
+      1075       await updateDoc(doc(db, "sales_orders", targetId), {                                   
+      1338   async function handleSaveCustomer(e: React.FormEvent) {                                    
+      1381         await updateDoc(doc(db, "customers", customerForm.customerId), {                     
+      1458               {isRootAdmin ? "ROOT_ADMIN" : (currentUser.role || "STAFF_GUDANG")}            
+      1476               ...(isRootAdmin ? [{ key: "human", label: "Manajemen Staf & Relasi" }] : []),  
+      1568               {currentTab === "human" && "Manajemen Staf & Hak Akses"}                       
+      2067                     {!isStaff && (                                                           
+      2127                     {!isStaff && isRootAdmin && (                                            
+      2349                     {!isStaff && (                                                           
+      2912                           await setDoc(doc(db, "settings", "store_info"), storeSettings, {...
+      2941                       await setDoc(doc(db, "settings", "store_info"), {                      
+      3189                           await setDoc(doc(db, "settings", "store_info"), { rajaOngkirApiK...
+      3212           {/* TAB 7: HUMAN (STAF, SUPPLIER, CUSTOMER) */}                                    
+      3218                   onClick={() => setHumanSubTab("staff")}                                    
+      3220                     humanSubTab === "staff" ? "bg-[#9F1239] text-white shadow-xs" : "bg-wh...
+      3223                   Staf Gudang ({usersList.length})                                           
+      3245               {/* 7.1 STAF GUDANG */}                                                        
+      3246               {humanSubTab === "staff" && (                                                  
+      3250                       <span className="text-xs font-bold text-slate-900 uppercase">Akun Pe...
+      3257                         setStaffForm({ staffId: fallbackId, fullName: "", userId: "", pass...
+      3258                         setStaffModalMode("create");                                         
+      3259                         setIsStaffModalOpen(true);                                           
+      3263                       + Tambah Staf Baru                                                     
+      3269                         <th className="p-2.5">ID Staf</th>                                   
+      3278                           <td className="p-2.5 font-mono font-bold text-slate-900">{u.staf...
+      3283                               {u.role || "STAFF_GUDANG"}                                     
+      3289                         <tr><td colSpan={4} className="p-4 text-center text-slate-400">Bel...
+      3611                     await updateDoc(doc(db, "sales_orders", targetProcessingSo.soId || tar...
+      3703         onConfirmSave={handleSaveProduct}                                                    
+      3733               await updateDoc(doc(db, "sales_orders", editingSoId), {                        
+      3822         onSubmitPo={handleSavePurchaseOrder}                                                 
+      3838               await updateDoc(doc(db, "suppliers", editingSupplier.supplierId || editingSu...
+      4084             <form onSubmit={handleSaveCustomer} className="space-y-3.5 text-xs">             
+
+

@@ -1,0 +1,130 @@
+﻿                : "bg-slate-600 text-white"
+            }`}>
+              {isRootAdmin ? "ROOT_ADMIN" : (currentUser.role || "STAFF_GUDANG")}
+            </span>
+          </div>
+        </div>
+
+        <nav className="flex-1 p-3 space-y-3 overflow-y-auto">
+          {/* Section A: Atin's Collection WMS */}
+          <div className="space-y-1">
+            <div className="px-3 py-1 text-[10px] uppercase font-bold tracking-wider text-rose-300/60">
+              Atin&apos;s Collection (WMS)
+            </div>
+            {[
+              { key: "dashboard", label: "Dashboard" },
+              { key: "sales", label: "Sales & Delivery Order" },
+              { key: "inventory", label: "Katalog Persediaan" },
+              { key: "purchase", label: "Purchase & Receiving" },
+              { key: "reports", label: "Pusat Laporan Historis" },
+              { key: "settings", label: "Konfigurasi Sistem" },
+              ...(isRootAdmin ? [{ key: "human", label: "Manajemen Staf & Relasi" }] : []),
+            ].map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => {
+                  setCurrentTab(item.key as MainTab); setIsMobileMenuOpen(false);
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition ${
+                  currentTab === item.key ? "bg-[#9F1239] text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"
+                }`}
+              >
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Section B: Konter & PPOB Control Center (Versi Lengkap) */}
+            <div className="pt-2 border-t border-[#4A1528] space-y-1">
+              <div className="px-3 py-1 text-[10px] uppercase font-bold tracking-wider text-emerald-400/80 flex items-center justify-between">
+                <span>Operasional Konter</span>
+                <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">BCC</span>
+              </div>
+              {[
+                { id: "konter", label: "Dashboard Konter", icon: "ðŸ“ˆ" },
+                { id: "konter_stock", label: "Pengelolaan Stock", icon: "ðŸ“¦" },
+                { id: "konter_movement", label: "Stock Movement Log", icon: "ðŸ”„" },
+                { id: "konter_adjustment", label: "Stock Adjustment", icon: "âš–ï¸" },
+                { id: "konter_po", label: "Purchase Order (PO)", icon: "ðŸ“" },
+                { id: "konter_receiving", label: "Penerimaan (Receiving)", icon: "ðŸ“¥" },
+                { id: "konter_sales_report", label: "Laporan Penjualan", icon: "ðŸ“‹" },
+                { id: "konter_stock_card", label: "Kartu Stock", icon: "ðŸ—‚ï¸" },
+                { id: "konter_cash_count", label: "Daily Cash Count", icon: "ðŸ’°" },
+                { id: "konter_import", label: "Import Penjualan", icon: "âš¡" },
+                { id: "konter_supplier", label: "Kelola Supplier", icon: "ðŸ¤" },
+              ].map((sub) => (
+                <button
+                  key={sub.id}
+                  type="button"
+                  onClick={() => {
+                    setCurrentTab(sub.id as any); setIsMobileMenuOpen(false);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition text-left ${
+                      currentTab === sub.id
+                        ? "bg-[#9F1239] text-white shadow-xs"
+                        : "text-rose-200 hover:bg-[#4A1528]"
+                    }`}
+                >
+                  <span>{sub.icon}</span>
+                  <span>{sub.label}</span>
+                </button>
+                              ))}
+            </div>
+          </nav>
+      </aside>
+        {/* Backdrop overlay saat menu sidebar mobile terbuka */}
+        {isMobileMenuOpen && (
+          <div
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 md:hidden"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
+
+
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        {/* TOPBAR */}
+        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-6 py-4 flex items-center justify-between">
+          <div>
+            {/* Tombol Hamburger 3 Garis (Mode Mobile) */}
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="inline-flex md:hidden items-center justify-center p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 mr-2"
+              aria-label="Toggle menu"
+            >
+              <div className="w-5 h-4 flex flex-col justify-between items-center">
+                <span className={`h-0.5 w-full bg-current rounded-full transition-all duration-300 ${isMobileMenuOpen ? "rotate-45 translate-y-1.5" : ""}`} />
+                <span className={`h-0.5 w-full bg-current rounded-full transition-all duration-300 ${isMobileMenuOpen ? "opacity-0" : ""}`} />
+                <span className={`h-0.5 w-full bg-current rounded-full transition-all duration-300 ${isMobileMenuOpen ? "-rotate-45 -translate-y-2" : ""}`} />
+              </div>
+            </button>
+
+            <h1 className="text-lg font-bold text-slate-900 tracking-tight">
+              {currentTab === "dashboard" && "Dashboard Operasional Gudang"}
+              {currentTab === "sales" && "Manajemen Sales Order & DO"}
+              {currentTab === "inventory" && "Katalog Persediaan & Stock Opname"}
+              {currentTab === "purchase" && "Purchasing & Penerimaan Barang"}
+              {currentTab === "reports" && "Pusat Laporan & Analitik"}
+              {currentTab === "settings" && "Pengaturan Sistem & Toko"}
+              {currentTab === "human" && "Manajemen Staf & Hak Akses"}
+              {(currentTab.startsWith("konter")) && "Modul Operasional Konter & PPOB"}
+            </h1>
+            <p className="text-xs text-slate-500">Database Firestore Realtime Connected</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={loadAllData}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium border border-slate-200 transition"
+            >
+              ðŸ”„ Refresh Data
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+            >

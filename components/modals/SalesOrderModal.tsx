@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useMemo } from "react";
 import { formatRupiah } from "@/lib/formatters";
@@ -267,7 +267,7 @@ export default function SalesOrderModal({
           <h3 className="text-sm font-bold text-slate-900">
             {editingSoId ? `Edit Sales Order [${editingSoId}]` : "Buat Sales Order Baru"}
           </h3>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg font-bold leading-none">
+          <button type="button" onClick={() => { setShippingRates([]); setSelectedRateIndex("MANUAL"); setManualCost(0); onClose(); }} className="text-slate-400 hover:text-slate-600 text-lg font-bold leading-none">
             &times;
           </button>
         </div>
