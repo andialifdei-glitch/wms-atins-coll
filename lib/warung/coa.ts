@@ -1,0 +1,77 @@
+import { warungFsFetch, warungDatastoreBase } from "@/lib/firebase-admin-warung";
+
+export type CoaType = "ASET" | "KEWAJIBAN" | "EKUITAS" | "PENDAPATAN" | "BEBAN";
+
+export interface CoaRow {
+  coaCode: string;
+  coaName: string;
+  type: CoaType;
+  normalBalance: "DEBIT" | "KREDIT";
+  active: boolean;
+  isSystem: boolean;
+  notes: string;
+}
+
+export const SYSTEM_ACCOUNTS: CoaRow[] = [
+  { coaCode: "1-1001", coaName: "Kas Tunai", type: "ASET", normalBalance: "DEBIT", active: true, isSystem: true, notes: "Kas tunai operasional" },
+  { coaCode: "1-1020", coaName: "Piutang Usaha", type: "ASET", normalBalance: "DEBIT", active: true, isSystem: true, notes: "Piutang pelanggan" },
+  { coaCode: "1-1030", coaName: "Persediaan Barang", type: "ASET", normalBalance: "DEBIT", active: true, isSystem: true, notes: "Persediaan barang dagang" },
+  { coaCode: "2-2010", coaName: "Utang Usaha", type: "KEWAJIBAN", normalBalance: "KREDIT", active: true, isSystem: true, notes: "Utang ke supplier" },
+  { coaCode: "4-4010", coaName: "Penjualan", type: "PENDAPATAN", normalBalance: "KREDIT", active: true, isSystem: true, notes: "Pendapatan penjualan" },
+  { coaCode: "5-5010", coaName: "HPP", type: "BEBAN", normalBalance: "DEBIT", active: true, isSystem: true, notes: "Harga pokok penjualan" },
+  { coaCode: "5-5020", coaName: "Beban Operasional", type: "BEBAN", normalBalance: "DEBIT", active: true, isSystem: true, notes: "Beban operasional umum" },
+  { coaCode: "3-3000", coaName: "Ikhtisar Laba Rugi", type: "EKUITAS", normalBalance: "KREDIT", active: true, isSystem: true, notes: "Akun penutup laba rugi" },
+  { coaCode: "3-3001", coaName: "Laba Ditahan", type: "EKUITAS", normalBalance: "KREDIT", active: true, isSystem: true, notes: "Akumulasi laba ditahan" },
+];
+
+function docToCoa(d: any): CoaRow {
+  const f = d.fields || {};
+  return {
+    coaCode: f.coaCode?.stringValue || d.name.split("/").pop(),
+    coaName: f.coaName?.stringValue || "",
+    type: (f.type?.stringValue || "ASET") as CoaType,
+    normalBalance: (f.normalBalance?.stringValue || "DEBIT") as "DEBIT" | "KREDIT",
+    active: f.active?.booleanValue ?? true,
+    isSystem: f.isSystem?.booleanValue ?? false,
+    notes: f.notes?.stringValue || "",
+  };
+}
+
+export async function getCoaMap(): Promise<Record<string, CoaRow>> {
+  const base = warungDatastoreBase();
+  const res = await warungFsFetch(`${base}/warung_coa?pageSize=500`);
+  const map: Record<string, CoaRow> = {};
+  if (res.ok) {
+    const j: any = await res.json();
+    (j.documents || []).forEach((d: any) => {
+      const row = docToCoa(d);
+      map[row.coaCode] = row;
+    });
+  }
+  return map;
+}
+
+export async function ensureSystemAccounts(actor: { uid: string; id: string; name: string; role: string }): Promise<void> {
+  const existing = await getCoaMap();
+  const base = warungDatastoreBase();
+  const nowIso = new Date().toISOString();
+
+  for (const acc of SYSTEM_ACCOUNTS) {
+    if (existing[acc.coaCode]) continue;
+    const url = `${base}/warung_coa/${encodeURIComponent(acc.coaCode)}`;
+    const payload = {
+      fields: {
+        coaCode: { stringValue: acc.coaCode },
+        coaName: { stringValue: acc.coaName },
+        type: { stringValue: acc.type },
+        normalBalance: { stringValue: acc.normalBalance },
+        active: { booleanValue: true },
+        isSystem: { booleanValue: true },
+        notes: { stringValue: acc.notes },
+        createdAt: { timestampValue: nowIso },
+        createdBy: { stringValue: actor.id },
+      },
+    };
+    await warungFsFetch(url, { method: "PATCH", body: JSON.stringify(payload) });
+  }
+}

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import KonterDashboardView from '@/components/konter/KonterDashboardView';
 import dynamic from "next/dynamic";
 
@@ -36,6 +36,7 @@ import SalesOrderModal from "@/components/modals/SalesOrderModal";
 import CreatePurchaseOrderModal from "@/components/modals/CreatePurchaseOrderModal";
 import NotificationBell from "@/components/notifications/NotificationBell";
 import StaffManager from "./StaffManager";
+import WarungShell from "@/components/warung/WarungShell";
 
 type MainTab =
   | "dashboard"
@@ -55,7 +56,31 @@ type MainTab =
   | "konter_stock_card"
   | "konter_cash_count"
   | "konter_import"
-  | "konter_supplier";
+  | "konter_supplier"
+  | "warung_dashboard"
+  | "warung_pos"
+  | "warung_products"
+  | "warung_suppliers"
+  | "warung_stock"
+  | "warung_stock_card"
+  | "warung_stock_opname"
+  | "warung_adjustment_ip"
+  | "warung_breakage"
+  | "warung_po"
+  | "warung_receiving"
+  | "warung_returns"
+  | "warung_cash_count"
+  | "warung_cash_flow"
+  | "warung_receivables"
+  | "warung_payables"
+  | "warung_coa"
+  | "warung_journals"
+  | "warung_reports"
+  | "warung_settings"
+  | "portal_profile"
+  | "portal_staff"
+  | "portal_access"
+  | "portal_security";
 
 interface RegionItem {
   id: string;
@@ -1499,7 +1524,7 @@ destinationId: resolvedDestinationId,
               { key: "purchase", label: "Purchase & Receiving" },
               { key: "reports", label: "Pusat Laporan Historis" },
               { key: "settings", label: "Konfigurasi Sistem" },
-              ...(isRootAdmin ? [{ key: "human", label: "Manajemen Staf & Relasi" }] : []),
+              // "Manajemen Staf & Relasi" dipindah ke Pengaturan Portal
             ].map((item) => (
               <button
                 key={item.key}
@@ -1554,6 +1579,139 @@ destinationId: resolvedDestinationId,
                 </button>
                               ))}
             </div>
+
+          {/* Section C: Operasional Warung (dengan grup) */}
+          <div className="space-y-1 pt-2 border-t border-[#4A1528]">
+            <div className="px-3 py-1 text-[10px] uppercase font-bold tracking-wider text-amber-400/80 flex items-center justify-between">
+              <span>Operasional Warung</span>
+              <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">WARUNG</span>
+            </div>
+
+            {/* Overview */}
+            <div className="pl-1">
+              <div className="text-[9px] uppercase font-bold tracking-wider text-slate-400 px-2 pt-1">Overview</div>
+              <button
+                type="button"
+                onClick={() => setCurrentTab("warung_dashboard" as any)}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition text-left ${currentTab === "warung_dashboard" ? "bg-amber-600 text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"}`}
+              >
+                <span>🏪</span><span>Dashboard Warung</span>
+              </button>
+            </div>
+
+            {/* Penjualan */}
+            <div className="pl-1">
+              <div className="text-[9px] uppercase font-bold tracking-wider text-slate-400 px-2 pt-1">Penjualan</div>
+              <button type="button" onClick={() => setCurrentTab("warung_pos" as any)} className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition text-left ${currentTab === "warung_pos" ? "bg-amber-600 text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"}`}>
+                <span>💳</span><span>Kasir / POS</span>
+              </button>
+            </div>
+
+            {/* Persediaan */}
+            <div className="pl-1">
+              <div className="text-[9px] uppercase font-bold tracking-wider text-slate-400 px-2 pt-1">Persediaan</div>
+              {[
+                { id: "warung_products", label: "Master Produk", icon: "📦" },
+                { id: "warung_suppliers", label: "Supplier", icon: "🤝" },
+                { id: "warung_stock", label: "Stock", icon: "📊" },
+                { id: "warung_stock_card", label: "Kartu Stock", icon: "🗂️" },
+                { id: "warung_stock_opname", label: "Stock Opname", icon: "📋" },
+                { id: "warung_adjustment_ip", label: "Adjustment (IP)", icon: "⚖️" },
+                { id: "warung_breakage", label: "Breakage / Susut", icon: "⚠️" },
+              ].map((sub) => (
+                <button key={sub.id} type="button" onClick={() => setCurrentTab(sub.id as any)} className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition text-left ${currentTab === sub.id ? "bg-amber-600 text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"}`}>
+                  <span>{sub.icon}</span><span>{sub.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Purchasing */}
+            <div className="pl-1">
+              <div className="text-[9px] uppercase font-bold tracking-wider text-slate-400 px-2 pt-1">Purchasing</div>
+              {[
+                { id: "warung_po", label: "Purchase Order", icon: "📝" },
+                { id: "warung_receiving", label: "Receiving", icon: "📥" },
+                { id: "warung_returns", label: "Retur Pembelian", icon: "↩️" },
+              ].map((sub) => (
+                <button key={sub.id} type="button" onClick={() => setCurrentTab(sub.id as any)} className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition text-left ${currentTab === sub.id ? "bg-amber-600 text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"}`}>
+                  <span>{sub.icon}</span><span>{sub.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Keuangan */}
+            <div className="pl-1">
+              <div className="text-[9px] uppercase font-bold tracking-wider text-slate-400 px-2 pt-1">Keuangan</div>
+              {[
+                { id: "warung_cash_count", label: "Cash Count", icon: "💰" },
+                { id: "warung_cash_flow", label: "Kas Masuk / Keluar", icon: "💵" },
+                { id: "warung_receivables", label: "Piutang", icon: "📈" },
+                { id: "warung_payables", label: "Utang", icon: "📉" },
+              ].map((sub) => (
+                <button key={sub.id} type="button" onClick={() => setCurrentTab(sub.id as any)} className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition text-left ${currentTab === sub.id ? "bg-amber-600 text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"}`}>
+                  <span>{sub.icon}</span><span>{sub.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Akuntansi */}
+            <div className="pl-1">
+              <div className="text-[9px] uppercase font-bold tracking-wider text-slate-400 px-2 pt-1">Akuntansi</div>
+              {[
+                { id: "warung_coa", label: "Chart of Accounts", icon: "🧾" },
+                { id: "warung_journals", label: "Jurnal Umum", icon: "📒" },
+                { id: "warung_income_statement", label: "Laba Rugi", icon: "📊" },
+                { id: "warung_balance_sheet", label: "Neraca", icon: "⚖️" },
+                { id: "warung_fiscal_periods", label: "Tutup Periode", icon: "🔒" },
+              ].map((sub) => (
+                <button key={sub.id} type="button" onClick={() => setCurrentTab(sub.id as any)} className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition text-left ${currentTab === sub.id ? "bg-amber-600 text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"}`}>
+                  <span>{sub.icon}</span><span>{sub.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Laporan */}
+            <div className="pl-1">
+              <div className="text-[9px] uppercase font-bold tracking-wider text-slate-400 px-2 pt-1">Laporan</div>
+              <button type="button" onClick={() => setCurrentTab("warung_reports" as any)} className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition text-left ${currentTab === "warung_reports" ? "bg-amber-600 text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"}`}>
+                <span>📑</span><span>Laporan</span>
+              </button>
+            </div>
+
+            {/* Pengaturan */}
+            <div className="pl-1">
+              <div className="text-[9px] uppercase font-bold tracking-wider text-slate-400 px-2 pt-1">Pengaturan</div>
+              <button type="button" onClick={() => setCurrentTab("warung_settings" as any)} className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition text-left ${currentTab === "warung_settings" ? "bg-amber-600 text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"}`}>
+                <span>⚙️</span><span>Pengaturan Warung</span>
+              </button>
+            </div>
+          </div>
+          {/* Section D: Pengaturan Portal */}
+          <div className="space-y-1 pt-2 border-t border-[#4A1528]">
+            <div className="px-3 py-1 text-[10px] uppercase font-bold tracking-wider text-sky-400/80 flex items-center justify-between">
+              <span>Pengaturan Portal</span>
+              <span className="text-[9px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded border border-sky-500/30">SETTINGS</span>
+            </div>
+            {[
+              { id: "portal_profile", label: "Profil Pengguna", icon: "👤" },
+              ...(isRootAdmin ? [{ id: "portal_staff", label: "Manajemen Staff", icon: "👥" }] : []),
+              { id: "portal_access", label: "Akses ke Setiap Usaha", icon: "🔐" },
+              { id: "portal_security", label: "Keamanan & Sesi Login", icon: "🛡️" },
+            ].map((sub) => (
+              <button
+                key={sub.id}
+                type="button"
+                onClick={() => { setCurrentTab(sub.id as any); setIsMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition text-left ${
+                  currentTab === sub.id ? "bg-sky-600 text-white shadow-xs" : "text-rose-200 hover:bg-[#4A1528]"
+                }`}
+              >
+                <span>{sub.icon}</span>
+                <span>{sub.label}</span>
+              </button>
+            ))}
+          </div>
+
           </nav>
       </aside>
         {/* Backdrop overlay saat menu sidebar mobile terbuka */}
@@ -1593,6 +1751,11 @@ destinationId: resolvedDestinationId,
               {currentTab === "settings" && "Pengaturan Sistem & Toko"}
               {currentTab === "human" && "Manajemen Staf & Hak Akses"}
               {(currentTab.startsWith("konter")) && "Modul Operasional Konter & PPOB"}
+              {currentTab.startsWith("warung") && "Operasional Warung"}
+              {currentTab === "portal_profile" && "Profil Pengguna"}
+              {currentTab === "portal_staff" && "Pengaturan Portal — Staff"}
+              {currentTab === "portal_access" && "Akses ke Setiap Usaha"}
+              {currentTab === "portal_security" && "Keamanan & Sesi Login"}
             </h1>
             <p className="text-xs text-slate-500">Database Firestore Realtime Connected</p>
           </div>
@@ -3236,6 +3399,32 @@ destinationId: resolvedDestinationId,
           )}
 
           {/* TAB 7: HUMAN (STAF, SUPPLIER, CUSTOMER) */}
+          {/* OPERASIONAL WARUNG */}
+          {currentTab.startsWith("warung") && (
+            <WarungShell initialTab={currentTab as any} />
+          )}
+
+          {/* PORTAL STAFF — reuse existing StaffManager */}
+          {currentTab === "portal_staff" && isRootAdmin && (
+            <StaffManager />
+          )}
+
+          {/* PORTAL LAINNYA — placeholder */}
+          {currentTab === "portal_profile" && (
+            <div className="bg-white rounded-xl border border-slate-200 p-6 text-center">
+              <p className="text-sm text-slate-600">Profil Pengguna — dalam pengembangan.</p>
+            </div>
+          )}
+          {currentTab === "portal_access" && (
+            <div className="bg-white rounded-xl border border-slate-200 p-6 text-center">
+              <p className="text-sm text-slate-600">Akses ke Setiap Usaha — dalam pengembangan.</p>
+            </div>
+          )}
+          {currentTab === "portal_security" && (
+            <div className="bg-white rounded-xl border border-slate-200 p-6 text-center">
+              <p className="text-sm text-slate-600">Keamanan & Sesi Login — dalam pengembangan.</p>
+            </div>
+          )}
           {currentTab === "human" && isRootAdmin && (
             <div className="space-y-4">
               <div className="flex gap-2 border-b border-slate-200 pb-2">

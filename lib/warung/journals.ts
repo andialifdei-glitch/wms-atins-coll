@@ -1,0 +1,183 @@
+import { warungFsFetch, warungDatastoreBase } from "@/lib/firebase-admin-warung";
+import { getCoaMap } from "./coa";
+import { isDateLocked } from "./fiscal";
+
+export type JournalEntry = { coaCode: string; coaName: string; debit: number; credit: number };
+
+export interface JournalMeta {
+  journalDate: string;
+  description: string;
+  refType: string;
+  refId: string;
+  actor: { uid: string; id: string; name: string; role: string };
+  status?: "POSTED" | "VOID";
+  voidOfJournalId?: string;
+}
+
+/**
+ * Posting jurnal double-entry. Validasi total debit == total kredit.
+ * Auto-generate journalId "JU-YYYYMMDD-XXX" dari counter harian.
+ */
+export async function postJournal(entries: JournalEntry[], meta: JournalMeta): Promise<{ journalId: string; totalDebit: number; totalCredit: number }> {
+  if (entries.length === 0) throw new Error("Jurnal kosong.");
+  let totalDebit = 0;
+  let totalCredit = 0;
+
+  const coaMap = await getCoaMap();
+  for (const e of entries) {
+    if (!e.coaCode) throw new Error("coaCode kosong.");
+    if (!coaMap[e.coaCode]) throw new Error("Akun tidak ditemukan: " + e.coaCode);
+    if (e.debit < 0 || e.credit < 0) throw new Error("Nilai debit/kredit tidak boleh negatif.");
+    if (e.debit > 0 && e.credit > 0) throw new Error(`Akun ${e.coaCode}: hanya boleh debit ATAU kredit.`);
+    if (e.debit === 0 && e.credit === 0) throw new Error(`Akun ${e.coaCode}: nilai 0 tidak valid.`);
+    totalDebit += e.debit;
+    totalCredit += e.credit;
+  }
+
+  if (totalDebit !== totalCredit) {
+    throw new Error(`Jurnal tidak balance: debit ${totalDebit} ≠ kredit ${totalCredit}`);
+  }
+  if (totalDebit === 0) throw new Error("Total jurnal 0.");
+
+  // Cek periode terkunci
+  const locked = await isDateLocked(meta.journalDate);
+  if (locked && meta.status !== "VOID") {
+    throw new Error(`Periode ${meta.journalDate.slice(0, 7)} sudah CLOSED. Jurnal tidak bisa diposting.`);
+  }
+
+  // Generate journalId dengan counter per tanggal
+  const ymd = meta.journalDate.replace(/-/g, "");
+  const counterName = `ju_${ymd}`;
+  const seq = await nextJournalSeq(counterName);
+  const journalId = `JU-${ymd}-${String(seq).padStart(3, "0")}`;
+
+  const base = warungDatastoreBase();
+  const entriesArrayValue = entries.map((e) => ({
+    mapValue: {
+      fields: {
+        coaCode: { stringValue: e.coaCode },
+        coaName: { stringValue: e.coaName || coaMap[e.coaCode].coaName },
+        debit: { integerValue: String(e.debit) },
+        credit: { integerValue: String(e.credit) },
+      },
+    },
+  }));
+
+  const fields: any = {
+    journalId: { stringValue: journalId },
+    journalDate: { stringValue: meta.journalDate },
+    description: { stringValue: meta.description },
+    refType: { stringValue: meta.refType },
+    refId: { stringValue: meta.refId },
+    entries: { arrayValue: { values: entriesArrayValue } },
+    totalDebit: { integerValue: String(totalDebit) },
+    totalCredit: { integerValue: String(totalCredit) },
+    status: { stringValue: meta.status || "POSTED" },
+    createdAt: { timestampValue: new Date().toISOString() },
+    createdBy: { stringValue: meta.actor.id },
+  };
+  if (meta.voidOfJournalId) fields.voidOfJournalId = { stringValue: meta.voidOfJournalId };
+
+  const url = `${base}/warung_journals/${encodeURIComponent(journalId)}`;
+  const res = await warungFsFetch(url, { method: "PATCH", body: JSON.stringify({ fields }) });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error("Gagal tulis jurnal: " + txt.slice(0, 200));
+  }
+
+  return { journalId, totalDebit, totalCredit };
+}
+
+async function nextJournalSeq(counterName: string): Promise<number> {
+  const MAX = 3;
+  let attempt = 0;
+  while (attempt < MAX) {
+    attempt++;
+    try {
+      const { getWarungAccessToken, warungDatastoreBase } = await import("@/lib/firebase-admin-warung");
+      const token = await getWarungAccessToken(["https://www.googleapis.com/auth/datastore", "https://www.googleapis.com/auth/cloud-platform"]);
+      const baseUrl = warungDatastoreBase();
+
+      const beginRes = await fetch(`https://firestore.googleapis.com/v1/projects/operasional-warung/databases/(default)/documents:beginTransaction`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ options: { readWrite: {} } }),
+      });
+      if (!beginRes.ok) throw new Error("beginTransaction: " + (await beginRes.text()));
+      const { transaction } = await beginRes.json();
+
+      const counterPath = `warung_counters/${encodeURIComponent(counterName)}`;
+      const getRes = await fetch(`${baseUrl}/${counterPath}?transaction=${encodeURIComponent(transaction)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      let current = 0;
+      let exists = false;
+      if (getRes.ok) {
+        exists = true;
+        const doc: any = await getRes.json();
+        const v = doc.fields?.value?.integerValue;
+        if (v) current = parseInt(v, 10);
+      }
+      const next = current + 1;
+
+      const commitBody: any = {
+        transaction,
+        writes: [{
+          update: {
+            name: `projects/operasional-warung/databases/(default)/documents/${counterPath}`,
+            fields: exists
+              ? { value: { integerValue: String(next) }, updatedAt: { timestampValue: new Date().toISOString() } }
+              : { value: { integerValue: String(next) }, createdAt: { timestampValue: new Date().toISOString() } },
+          },
+        }],
+      };
+      const commitRes = await fetch(`https://firestore.googleapis.com/v1/projects/operasional-warung/databases/(default)/documents:commit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(commitBody),
+      });
+      if (!commitRes.ok) {
+        const txt = await commitRes.text();
+        if (txt.includes("ABORTED") || txt.includes("FAILED_PRECONDITION")) continue;
+        throw new Error("commit: " + txt);
+      }
+      return next;
+    } catch (err: any) {
+      if (attempt >= MAX) throw err;
+    }
+  }
+  throw new Error("nextJournalSeq exceeded retry");
+}
+
+/** Void jurnal — posting jurnal koreksi dengan debit↔kredit dibalik */
+export async function voidJournal(
+  originalJournalId: string,
+  meta: { journalDate: string; description: string; refType: string; refId: string; actor: { uid: string; id: string; name: string; role: string } }
+): Promise<{ journalId: string }> {
+  const base = warungDatastoreBase();
+  const res = await warungFsFetch(`${base}/warung_journals/${encodeURIComponent(originalJournalId)}`);
+  if (!res.ok) throw new Error("Jurnal asli tidak ditemukan.");
+  const j: any = await res.json();
+  if (j.fields?.status?.stringValue !== "POSTED") throw new Error("Jurnal bukan POSTED.");
+  if (j.fields?.voidOfJournalId?.stringValue) throw new Error("Ini jurnal VOID, tidak bisa di-void lagi.");
+
+  const entriesRaw = j.fields?.entries?.arrayValue?.values || [];
+  const reversed: JournalEntry[] = entriesRaw.map((v: any) => {
+    const m = v.mapValue?.fields || {};
+    const debit = parseInt(m.debit?.integerValue || "0", 10);
+    const credit = parseInt(m.credit?.integerValue || "0", 10);
+    return {
+      coaCode: m.coaCode?.stringValue || "",
+      coaName: m.coaName?.stringValue || "",
+      debit: credit,
+      credit: debit,
+    };
+  });
+
+  const result = await postJournal(reversed, {
+    ...meta,
+    status: "VOID",
+    voidOfJournalId: originalJournalId,
+  });
+  return { journalId: result.journalId };
+}

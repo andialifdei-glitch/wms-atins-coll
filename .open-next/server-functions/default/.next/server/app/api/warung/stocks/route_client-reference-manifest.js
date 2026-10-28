@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/warung/stocks/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"D:\\Atins-Collection\\emir-cell\\wms-atins-coll\\app\\api\\warung\\stocks\\route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};

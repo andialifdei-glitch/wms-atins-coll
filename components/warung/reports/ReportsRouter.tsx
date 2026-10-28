@@ -1,0 +1,46 @@
+"use client";
+
+import React, { useState } from "react";
+import StockReportView from "./StockReportView";
+import PurchaseReportView from "./PurchaseReportView";
+import FinanceReportView from "./FinanceReportView";
+import ActivityLogView from "./ActivityLogView";
+import SalesReportView from "./SalesReportView";
+
+type Tab = "sales" | "stock" | "purchases" | "finance" | "activity";
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: "sales", label: "Penjualan" },
+  { key: "stock", label: "Stok" },
+  { key: "purchases", label: "Pembelian" },
+  { key: "finance", label: "Keuangan" },
+  { key: "activity", label: "Log Aktivitas" },
+];
+
+export default function ReportsRouter() {
+  const [tab, setTab] = useState<Tab>("sales");
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2 border-b border-slate-200 pb-2 flex-wrap">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              tab === t.key ? "bg-amber-600 text-white shadow-xs" : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "sales" && <SalesReportView />}
+      {tab === "stock" && <StockReportView />}
+      {tab === "purchases" && <PurchaseReportView />}
+      {tab === "finance" && <FinanceReportView />}
+      {tab === "activity" && <ActivityLogView />}
+    </div>
+  );
+}

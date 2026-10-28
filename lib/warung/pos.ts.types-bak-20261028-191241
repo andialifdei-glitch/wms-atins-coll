@@ -1,0 +1,305 @@
+import { warungFsFetch, warungDatastoreBase } from "@/lib/firebase-admin-warung";
+import { getCoaMap } from "./coa";
+import { postJournal, voidJournal } from "./journals";
+import { nextSequence } from "./counters";
+import { applyBatchStockMutations } from "./stocks";
+
+const KAS_CODE = "1-1001";
+const AR_CODE = "1-1020";
+const SALES_CODE = "4-4010";
+const HPP_CODE = "5-5010";
+const INVENTORY_CODE = "1-1030";
+
+export interface SaleItemInput {
+  productCode: string;
+  qty: number;
+  price?: number;      // override sellingPrice, opsional
+  discountItem?: number;
+}
+
+export interface SaleItem extends SaleItemInput {
+  productName: string;
+  unit: string;
+  capitalPrice: number;
+  sellingPrice: number;
+  subtotal: number;
+}
+
+export type PaymentMethod = "CASH" | "CREDIT";
+
+export interface PostSaleResult {
+  saleId: string;
+  totalAmount: number;
+  saleJournalId: string;
+  cogsJournalId: string;
+  cashFlowId?: string;
+  receivableId?: string;
+}
+
+export async function postSale(opts: {
+  saleDate: string;
+  customerName: string;
+  customerId?: string;
+  paymentMethod: PaymentMethod;
+  items: SaleItemInput[];
+  notes?: string;
+  actor: { uid: string; id: string; name: string; role: string };
+}): Promise<PostSaleResult> {
+  if (opts.items.length === 0) throw new Error("Tidak ada item.");
+  if (opts.paymentMethod !== "CASH" && opts.paymentMethod !== "CREDIT") throw new Error("paymentMethod tidak valid.");
+  if (opts.paymentMethod === "CREDIT" && !opts.customerName) throw new Error("Kredit wajib ada nama customer.");
+
+  const base = warungDatastoreBase();
+  const coaMap = await getCoaMap();
+  const required = [KAS_CODE, AR_CODE, SALES_CODE, HPP_CODE, INVENTORY_CODE];
+  for (const c of required) if (!coaMap[c]) throw new Error(`Akun ${c} tidak ada.`);
+
+  // Validasi & enrich items
+  const enriched: SaleItem[] = [];
+  let subtotal = 0;
+  let totalHpp = 0;
+  for (const it of opts.items) {
+    const productCode = String(it.productCode || "").trim();
+    const qty = Math.trunc(Number(it.qty || 0));
+    if (!productCode || qty <= 0) throw new Error("Item tidak valid: " + productCode);
+
+    const prodRes = await warungFsFetch(`${base}/warung_products/${encodeURIComponent(productCode)}`);
+    if (!prodRes.ok) throw new Error("Produk tidak ditemukan: " + productCode);
+    const pj: any = await prodRes.json();
+    const productName = pj.fields?.name?.stringValue || "";
+    const unit = pj.fields?.unit?.stringValue || "Pcs";
+    const capitalPrice = parseInt(pj.fields?.capitalPrice?.integerValue || "0", 10);
+    const defaultSelling = parseInt(pj.fields?.sellingPrice?.integerValue || "0", 10);
+    const sellingPrice = Math.max(0, Math.trunc(Number(it.price ?? defaultSelling)));
+    const discountItem = Math.max(0, Math.trunc(Number(it.discountItem || 0)));
+    if (discountItem > sellingPrice * qty) throw new Error(`Diskon melebihi subtotal untuk ${productCode}.`);
+    const lineSubtotal = (sellingPrice * qty) - discountItem;
+    if (lineSubtotal < 0) throw new Error("Subtotal negatif: " + productCode);
+
+    subtotal += lineSubtotal;
+    totalHpp += capitalPrice * qty;
+    enriched.push({ productCode, productName, unit, capitalPrice, sellingPrice, qty, subtotal: lineSubtotal, discountItem });
+  }
+
+  if (subtotal <= 0) throw new Error("Total penjualan harus > 0.");
+
+  const now = new Date();
+  const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  const seq = await nextSequence("sl_" + ymd, 1);
+  const saleId = `SL-${ymd}-${String(seq).padStart(3, "0")}`;
+
+  const actor = opts.actor;
+
+  // 1. Mutasi stok keluar (atomic). Kalau ada yang gagal (stok kurang), transaction di-rollback.
+  await applyBatchStockMutations({
+    mutations: enriched.map((it) => ({ productCode: it.productCode, signedQty: -it.qty, cost: it.capitalPrice, notes: `Sale ${saleId}` })),
+    type: "OUT",
+    refType: "SALE",
+    refId: saleId,
+    actor,
+    allowNegative: false,
+  });
+
+  // 2. Jurnal penjualan
+  const debitAccount = opts.paymentMethod === "CASH" ? KAS_CODE : AR_CODE;
+  const saleJournal = await postJournal([
+    { coaCode: debitAccount, coaName: coaMap[debitAccount].coaName, debit: subtotal, credit: 0 },
+    { coaCode: SALES_CODE, coaName: coaMap[SALES_CODE].coaName, debit: 0, credit: subtotal },
+  ], {
+    journalDate: opts.saleDate,
+    description: `Penjualan ${saleId} — ${opts.customerName}`,
+    refType: opts.paymentMethod === "CASH" ? "SALE_CASH" : "SALE_CREDIT",
+    refId: saleId,
+    actor,
+  });
+
+  // 3. Jurnal HPP
+  let cogsJournalId = "";
+  if (totalHpp > 0) {
+    const cogs = await postJournal([
+      { coaCode: HPP_CODE, coaName: coaMap[HPP_CODE].coaName, debit: totalHpp, credit: 0 },
+      { coaCode: INVENTORY_CODE, coaName: coaMap[INVENTORY_CODE].coaName, debit: 0, credit: totalHpp },
+    ], {
+      journalDate: opts.saleDate,
+      description: `HPP ${saleId} — ${opts.customerName}`,
+      refType: "SALE_COGS",
+      refId: saleId,
+      actor,
+    });
+    cogsJournalId = cogs.journalId;
+  }
+
+  // 4. Kalau CASH → buat Cash Flow (auto-jurnal KAS double? Tidak — jurnal penjualan sudah debit Kas.
+  //    CF hanya untuk tracking arus kas, TIDAK posting jurnal lagi agar tidak double)
+  //    Jadi CF di sini = dokumen tracking murni, journalId-nya diisi saleJournalId (referensi saja)
+  let cashFlowId = "";
+  let receivableId = "";
+
+  if (opts.paymentMethod === "CASH") {
+    const cfSeq = await nextSequence("cf_" + ymd, 1);
+    cashFlowId = `CF-${ymd}-${String(cfSeq).padStart(3, "0")}`;
+    const cfFields: any = {
+      cfId: { stringValue: cashFlowId },
+      flowDate: { stringValue: opts.saleDate },
+      flowType: { stringValue: "IN" },
+      amount: { integerValue: String(subtotal) },
+      category: { stringValue: `Penjualan ${saleId}` },
+      counterAccount: { stringValue: SALES_CODE },
+      counterAccountName: { stringValue: coaMap[SALES_CODE].coaName },
+      notes: { stringValue: `Auto dari ${saleId}` },
+      journalId: { stringValue: "" },    // kosong — tidak buat jurnal lagi
+      status: { stringValue: "POSTED" },
+      saleId: { stringValue: saleId },
+      createdAt: { timestampValue: new Date().toISOString() },
+      createdBy: { stringValue: actor.id },
+    };
+    await warungFsFetch(`${base}/warung_cash_flows/${encodeURIComponent(cashFlowId)}`, { method: "PATCH", body: JSON.stringify({ fields: cfFields }) });
+  }
+
+  if (opts.paymentMethod === "CREDIT") {
+    const arSeq = await nextSequence("ar_" + ymd, 1);
+    receivableId = `AR-${ymd}-${String(arSeq).padStart(3, "0")}`;
+    const arFields: any = {
+      arId: { stringValue: receivableId },
+      customerName: { stringValue: opts.customerName },
+      arDate: { stringValue: opts.saleDate },
+      dueDate: { stringValue: "" },
+      amount: { integerValue: String(subtotal) },
+      paidAmount: { integerValue: "0" },
+      status: { stringValue: "OPEN" },
+      notes: { stringValue: `Auto dari ${saleId}` },
+      createJournalId: { stringValue: saleJournal.journalId },
+      saleId: { stringValue: saleId },
+      payments: { arrayValue: { values: [] } },
+      createdAt: { timestampValue: new Date().toISOString() },
+      createdBy: { stringValue: actor.id },
+    };
+    await warungFsFetch(`${base}/warung_receivables/${encodeURIComponent(receivableId)}`, { method: "PATCH", body: JSON.stringify({ fields: arFields }) });
+  }
+
+  // 5. Simpan dokumen sales
+  const itemsArrayValues = enriched.map((it) => ({
+    mapValue: {
+      fields: {
+        productCode: { stringValue: it.productCode },
+        productName: { stringValue: it.productName },
+        unit: { stringValue: it.unit },
+        capitalPrice: { integerValue: String(it.capitalPrice) },
+        sellingPrice: { integerValue: String(it.sellingPrice) },
+        qty: { integerValue: String(it.qty) },
+        discountItem: { integerValue: String(it.discountItem || 0) },
+        subtotal: { integerValue: String(it.subtotal) },
+      },
+    },
+  }));
+
+  const saleFields: any = {
+    saleId: { stringValue: saleId },
+    saleDate: { stringValue: opts.saleDate },
+    customerName: { stringValue: opts.customerName || "Walk-in" },
+    customerId: { stringValue: opts.customerId || "" },
+    paymentMethod: { stringValue: opts.paymentMethod },
+    subtotal: { integerValue: String(subtotal) },
+    discountAmount: { integerValue: "0" },
+    totalAmount: { integerValue: String(subtotal) },
+    paidAmount: { integerValue: opts.paymentMethod === "CASH" ? String(subtotal) : "0" },
+    remainingAmount: { integerValue: opts.paymentMethod === "CASH" ? "0" : String(subtotal) },
+    items: { arrayValue: { values: itemsArrayValues } },
+    saleJournalId: { stringValue: saleJournal.journalId },
+    cogsJournalId: { stringValue: cogsJournalId },
+    receivableId: { stringValue: receivableId },
+    cashFlowId: { stringValue: cashFlowId },
+    status: { stringValue: "POSTED" },
+    notes: { stringValue: opts.notes || "" },
+    createdAt: { timestampValue: new Date().toISOString() },
+    createdBy: { stringValue: actor.id },
+  };
+  const saleRes = await warungFsFetch(`${base}/warung_sales/${encodeURIComponent(saleId)}`, { method: "PATCH", body: JSON.stringify({ fields: saleFields }) });
+  if (!saleRes.ok) throw new Error("Gagal simpan penjualan (stok & jurnal sudah tercatat).");
+
+  return {
+    saleId,
+    totalAmount: subtotal,
+    saleJournalId: saleJournal.journalId,
+    cogsJournalId,
+    cashFlowId: cashFlowId || undefined,
+    receivableId: receivableId || undefined,
+  };
+}
+
+export async function voidSale(saleId: string, actor: { uid: string; id: string; name: string; role: string }): Promise<{ voidJournalId: string }> {
+  const base = warungDatastoreBase();
+  const saleRes = await warungFsFetch(`${base}/warung_sales/${encodeURIComponent(saleId)}`);
+  if (!saleRes.ok) throw new Error("Penjualan tidak ditemukan.");
+  const sj: any = await saleRes.json();
+  if (sj.fields?.status?.stringValue === "VOID") throw new Error("Sudah VOID.");
+  if (sj.fields?.status?.stringValue !== "POSTED") throw new Error("Hanya POSTED bisa void.");
+
+  const saleJournalId = sj.fields?.saleJournalId?.stringValue;
+  const cogsJournalId = sj.fields?.cogsJournalId?.stringValue || "";
+  const itemsRaw = sj.fields?.items?.arrayValue?.values || [];
+  const items = itemsRaw.map((v: any) => {
+    const m = v.mapValue?.fields || {};
+    return {
+      productCode: m.productCode?.stringValue || "",
+      qty: parseInt(m.qty?.integerValue || "0", 10),
+      capitalPrice: parseInt(m.capitalPrice?.integerValue || "0", 10),
+    };
+  });
+
+  // Kembalikan stok
+  await applyBatchStockMutations({
+    mutations: items.map((it) => ({ productCode: it.productCode, signedQty: it.qty, cost: it.capitalPrice, notes: `VOID Sale ${saleId}` })),
+    type: "IN",
+    refType: "SALE_VOID",
+    refId: saleId,
+    actor,
+    allowNegative: true,
+  });
+
+  // Void jurnal penjualan & HPP
+  const saleVoid = await voidJournal(saleJournalId, {
+    journalDate: new Date().toISOString().slice(0, 10),
+    description: `VOID Penjualan ${saleId}`,
+    refType: "SALE_VOID",
+    refId: saleId,
+    actor,
+  });
+  if (cogsJournalId) {
+    await voidJournal(cogsJournalId, {
+      journalDate: new Date().toISOString().slice(0, 10),
+      description: `VOID HPP ${saleId}`,
+      refType: "SALE_COGS_VOID",
+      refId: saleId,
+      actor,
+    });
+  }
+
+  // Void CF & AR terkait
+  const cfId = sj.fields?.cashFlowId?.stringValue;
+  if (cfId) {
+    try {
+      await warungFsFetch(`${base}/warung_cash_flows/${encodeURIComponent(cfId)}?updateMask.fieldPaths=status&updateMask.fieldPaths=voidJournalId`, {
+        method: "PATCH",
+        body: JSON.stringify({ fields: { status: { stringValue: "VOID" }, voidJournalId: { stringValue: saleVoid.journalId } } }),
+      });
+    } catch {}
+  }
+  const arId = sj.fields?.receivableId?.stringValue;
+  if (arId) {
+    try {
+      await warungFsFetch(`${base}/warung_receivables/${encodeURIComponent(arId)}?updateMask.fieldPaths=status`, {
+        method: "PATCH",
+        body: JSON.stringify({ fields: { status: { stringValue: "CANCELLED" } } }),
+      });
+    } catch {}
+  }
+
+  // Update sale status
+  await warungFsFetch(`${base}/warung_sales/${encodeURIComponent(saleId)}?updateMask.fieldPaths=status&updateMask.fieldPaths=voidJournalId&updateMask.fieldPaths=voidedAt`, {
+    method: "PATCH",
+    body: JSON.stringify({ fields: { status: { stringValue: "VOID" }, voidJournalId: { stringValue: saleVoid.journalId }, voidedAt: { timestampValue: new Date().toISOString() } } }),
+  });
+
+  return { voidJournalId: saleVoid.journalId };
+}

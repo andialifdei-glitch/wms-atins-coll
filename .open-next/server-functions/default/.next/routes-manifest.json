@@ -21,7 +21,137 @@
     "afterFiles": [],
     "fallback": []
   },
-  "dynamicRoutes": [],
+  "dynamicRoutes": [
+    {
+      "page": "/api/warung/cash-count/[ccId]",
+      "regex": "^/api/warung/cash\\-count/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPccId": "nxtPccId"
+      },
+      "namedRegex": "^/api/warung/cash\\-count/(?<nxtPccId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/cash-flows/[cfId]",
+      "regex": "^/api/warung/cash\\-flows/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPcfId": "nxtPcfId"
+      },
+      "namedRegex": "^/api/warung/cash\\-flows/(?<nxtPcfId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/coa/[coaCode]",
+      "regex": "^/api/warung/coa/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPcoaCode": "nxtPcoaCode"
+      },
+      "namedRegex": "^/api/warung/coa/(?<nxtPcoaCode>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/departments/[id]",
+      "regex": "^/api/warung/departments/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/warung/departments/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/divisions/[code]",
+      "regex": "^/api/warung/divisions/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPcode": "nxtPcode"
+      },
+      "namedRegex": "^/api/warung/divisions/(?<nxtPcode>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/families/[famCode]",
+      "regex": "^/api/warung/families/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPfamCode": "nxtPfamCode"
+      },
+      "namedRegex": "^/api/warung/families/(?<nxtPfamCode>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/payables/[apId]",
+      "regex": "^/api/warung/payables/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPapId": "nxtPapId"
+      },
+      "namedRegex": "^/api/warung/payables/(?<nxtPapId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/po/[poId]",
+      "regex": "^/api/warung/po/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPpoId": "nxtPpoId"
+      },
+      "namedRegex": "^/api/warung/po/(?<nxtPpoId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/products/[code]",
+      "regex": "^/api/warung/products/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPcode": "nxtPcode"
+      },
+      "namedRegex": "^/api/warung/products/(?<nxtPcode>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/receivables/[arId]",
+      "regex": "^/api/warung/receivables/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtParId": "nxtParId"
+      },
+      "namedRegex": "^/api/warung/receivables/(?<nxtParId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/sales/[saleId]",
+      "regex": "^/api/warung/sales/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPsaleId": "nxtPsaleId"
+      },
+      "namedRegex": "^/api/warung/sales/(?<nxtPsaleId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/stock-opname/[id]",
+      "regex": "^/api/warung/stock\\-opname/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/warung/stock\\-opname/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/stock-opname/[id]/items/[itemId]",
+      "regex": "^/api/warung/stock\\-opname/([^/]+?)/items/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid",
+        "nxtPitemId": "nxtPitemId"
+      },
+      "namedRegex": "^/api/warung/stock\\-opname/(?<nxtPid>[^/]+?)/items/(?<nxtPitemId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/stocks/[code]",
+      "regex": "^/api/warung/stocks/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPcode": "nxtPcode"
+      },
+      "namedRegex": "^/api/warung/stocks/(?<nxtPcode>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/warung/stocks/[code]/movements",
+      "regex": "^/api/warung/stocks/([^/]+?)/movements(?:/)?$",
+      "routeKeys": {
+        "nxtPcode": "nxtPcode"
+      },
+      "namedRegex": "^/api/warung/stocks/(?<nxtPcode>[^/]+?)/movements(?:/)?$"
+    },
+    {
+      "page": "/api/warung/suppliers/[code]",
+      "regex": "^/api/warung/suppliers/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPcode": "nxtPcode"
+      },
+      "namedRegex": "^/api/warung/suppliers/(?<nxtPcode>[^/]+?)(?:/)?$"
+    }
+  ],
   "staticRoutes": [
     {
       "page": "/",
@@ -130,6 +260,186 @@
       "regex": "^/api/suppliers(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/suppliers(?:/)?$"
+    },
+    {
+      "page": "/api/warung/activity-logs",
+      "regex": "^/api/warung/activity\\-logs(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/activity\\-logs(?:/)?$"
+    },
+    {
+      "page": "/api/warung/adjustment-ip",
+      "regex": "^/api/warung/adjustment\\-ip(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/adjustment\\-ip(?:/)?$"
+    },
+    {
+      "page": "/api/warung/breakage",
+      "regex": "^/api/warung/breakage(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/breakage(?:/)?$"
+    },
+    {
+      "page": "/api/warung/cash-count",
+      "regex": "^/api/warung/cash\\-count(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/cash\\-count(?:/)?$"
+    },
+    {
+      "page": "/api/warung/cash-flows",
+      "regex": "^/api/warung/cash\\-flows(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/cash\\-flows(?:/)?$"
+    },
+    {
+      "page": "/api/warung/coa",
+      "regex": "^/api/warung/coa(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/coa(?:/)?$"
+    },
+    {
+      "page": "/api/warung/departments",
+      "regex": "^/api/warung/departments(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/departments(?:/)?$"
+    },
+    {
+      "page": "/api/warung/divisions",
+      "regex": "^/api/warung/divisions(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/divisions(?:/)?$"
+    },
+    {
+      "page": "/api/warung/families",
+      "regex": "^/api/warung/families(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/families(?:/)?$"
+    },
+    {
+      "page": "/api/warung/fiscal-periods",
+      "regex": "^/api/warung/fiscal\\-periods(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/fiscal\\-periods(?:/)?$"
+    },
+    {
+      "page": "/api/warung/health",
+      "regex": "^/api/warung/health(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/health(?:/)?$"
+    },
+    {
+      "page": "/api/warung/journals",
+      "regex": "^/api/warung/journals(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/journals(?:/)?$"
+    },
+    {
+      "page": "/api/warung/payables",
+      "regex": "^/api/warung/payables(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/payables(?:/)?$"
+    },
+    {
+      "page": "/api/warung/po",
+      "regex": "^/api/warung/po(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/po(?:/)?$"
+    },
+    {
+      "page": "/api/warung/products",
+      "regex": "^/api/warung/products(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/products(?:/)?$"
+    },
+    {
+      "page": "/api/warung/purchase-returns",
+      "regex": "^/api/warung/purchase\\-returns(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/purchase\\-returns(?:/)?$"
+    },
+    {
+      "page": "/api/warung/receivables",
+      "regex": "^/api/warung/receivables(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/receivables(?:/)?$"
+    },
+    {
+      "page": "/api/warung/receiving",
+      "regex": "^/api/warung/receiving(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/receiving(?:/)?$"
+    },
+    {
+      "page": "/api/warung/reports/balance-sheet",
+      "regex": "^/api/warung/reports/balance\\-sheet(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/reports/balance\\-sheet(?:/)?$"
+    },
+    {
+      "page": "/api/warung/reports/finance",
+      "regex": "^/api/warung/reports/finance(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/reports/finance(?:/)?$"
+    },
+    {
+      "page": "/api/warung/reports/income-statement",
+      "regex": "^/api/warung/reports/income\\-statement(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/reports/income\\-statement(?:/)?$"
+    },
+    {
+      "page": "/api/warung/reports/purchases",
+      "regex": "^/api/warung/reports/purchases(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/reports/purchases(?:/)?$"
+    },
+    {
+      "page": "/api/warung/reports/stock",
+      "regex": "^/api/warung/reports/stock(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/reports/stock(?:/)?$"
+    },
+    {
+      "page": "/api/warung/reports/trial-balance",
+      "regex": "^/api/warung/reports/trial\\-balance(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/reports/trial\\-balance(?:/)?$"
+    },
+    {
+      "page": "/api/warung/sales",
+      "regex": "^/api/warung/sales(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/sales(?:/)?$"
+    },
+    {
+      "page": "/api/warung/settings",
+      "regex": "^/api/warung/settings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/settings(?:/)?$"
+    },
+    {
+      "page": "/api/warung/stock-opname",
+      "regex": "^/api/warung/stock\\-opname(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/stock\\-opname(?:/)?$"
+    },
+    {
+      "page": "/api/warung/stocks",
+      "regex": "^/api/warung/stocks(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/stocks(?:/)?$"
+    },
+    {
+      "page": "/api/warung/stocks/adjust",
+      "regex": "^/api/warung/stocks/adjust(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/stocks/adjust(?:/)?$"
+    },
+    {
+      "page": "/api/warung/suppliers",
+      "regex": "^/api/warung/suppliers(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/warung/suppliers(?:/)?$"
     },
     {
       "page": "/cash-count",

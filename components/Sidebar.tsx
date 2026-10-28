@@ -16,15 +16,16 @@ export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userR
 
   const [openWms, setOpenWms] = useState<boolean>(true);
   const [openKonter, setOpenKonter] = useState<boolean>(true);
+  const [openWarung, setOpenWarung] = useState<boolean>(true);
+  const [openPortal, setOpenPortal] = useState<boolean>(false);
 
   const wmsMenus = [
-    { id: "dashboard", label: "Dashboard WMS", href: "/", icon: "📊" },
+    { id: "dashboard", label: "Dashboard WMS", href: "/?tab=dashboard", icon: "📊" },
     { id: "sales", label: "Sales & Delivery Order", href: "/?tab=sales", icon: "📦" },
     { id: "inventory", label: "Katalog Persediaan", href: "/?tab=inventory", icon: "🏷️" },
     { id: "purchase", label: "Purchase & Receiving", href: "/?tab=purchase", icon: "📥" },
     { id: "reports", label: "Pusat Laporan Historis", href: "/?tab=reports", icon: "📑" },
     { id: "settings", label: "Konfigurasi Sistem", href: "/?tab=settings", icon: "⚙️" },
-    { id: "human", label: "Manajemen Staf & Relasi", href: "/?tab=human", icon: "👥" },
   ];
 
   const konterMenus = [
@@ -42,11 +43,44 @@ export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userR
     { id: "suppliers", label: "Kelola Supplier", href: "/suppliers", icon: "🤝" },
   ];
 
-  const isHomeActive = pathname === "/";
+  const warungMenus = [
+    { id: "warung_dashboard", label: "Dashboard Warung", icon: "🏪" },
+    { id: "warung_pos", label: "Kasir / POS", icon: "💳" },
+    { id: "warung_products", label: "Master Produk", icon: "📦" },
+    { id: "warung_suppliers", label: "Supplier", icon: "🤝" },
+    { id: "warung_stock", label: "Stock", icon: "📊" },
+    { id: "warung_stock_card", label: "Kartu Stock", icon: "🗂️" },
+    { id: "warung_stock_opname", label: "Stock Opname", icon: "📋" },
+    { id: "warung_adjustment_ip", label: "Adjustment (IP)", icon: "⚖️" },
+    { id: "warung_breakage", label: "Breakage / Susut", icon: "⚠️" },
+    { id: "warung_po", label: "Purchase Order", icon: "📝" },
+    { id: "warung_receiving", label: "Receiving", icon: "📥" },
+    { id: "warung_returns", label: "Retur Pembelian", icon: "↩️" },
+    { id: "warung_cash_count", label: "Cash Count", icon: "💰" },
+    { id: "warung_cash_flow", label: "Kas Masuk / Keluar", icon: "💵" },
+    { id: "warung_receivables", label: "Piutang", icon: "📈" },
+    { id: "warung_payables", label: "Utang", icon: "📉" },
+    { id: "warung_coa", label: "Chart of Accounts", icon: "🧾" },
+    { id: "warung_journals", label: "Jurnal Umum", icon: "📒" },
+    { id: "warung_income_statement", label: "Laba Rugi", icon: "📊" },
+    { id: "warung_balance_sheet", label: "Neraca", icon: "⚖️" },
+    { id: "warung_fiscal_periods", label: "Tutup Periode", icon: "🔒" },
+    { id: "warung_reports", label: "Laporan", icon: "📑" },
+    { id: "warung_settings", label: "Pengaturan Warung", icon: "⚙️" },
+  ];
+
+  const portalMenus = [
+    { id: "portal_profile", label: "Profil Pengguna", icon: "👤" },
+    { id: "portal_staff", label: "Staff", icon: "👥" },
+    { id: "portal_access", label: "Akses ke Setiap Usaha", icon: "🔐" },
+    { id: "portal_security", label: "Keamanan & Sesi Login", icon: "🛡️" },
+  ];
+
+  const isHomeActive = pathname === "/" && activeTab === "dashboard";
 
   return (
     <aside className="w-64 min-h-screen bg-slate-900 text-slate-100 border-r border-slate-800 p-4 flex flex-col justify-between shrink-0 select-none z-30">
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
         {/* Brand Header */}
         <div className="px-3 py-2 border-b border-slate-800">
           <div className="text-[11px] uppercase tracking-wider text-cyan-400 font-bold">Business Control Center</div>
@@ -54,22 +88,21 @@ export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userR
         </div>
 
         {/* Dashboard Utama */}
-        <div className="flex flex-col gap-1">
-          <Link
-            href="/"
-            className={
-              "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all " +
-              (isHomeActive
-                ? "bg-indigo-600 text-white font-semibold shadow-sm"
-                : "text-slate-300 hover:bg-slate-800 hover:text-white")
-            }
-          >
-            <span>🏠</span>
-            <span>Dashboard Utama</span>
-          </Link>
-        </div>
+        <Link
+          href="/"
+          onClick={() => setActiveTab && setActiveTab("dashboard")}
+          className={
+            "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all " +
+            (isHomeActive
+              ? "bg-indigo-600 text-white font-semibold shadow-sm"
+              : "text-slate-300 hover:bg-slate-800 hover:text-white")
+          }
+        >
+          <span>🏠</span>
+          <span>Dashboard Utama</span>
+        </Link>
 
-        {/* Menu Dropdown Atin's Collection (WMS) */}
+        {/* WMS */}
         <div className="flex flex-col">
           <button
             type="button"
@@ -84,7 +117,6 @@ export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userR
               ▾
             </span>
           </button>
-
           {openWms && (
             <div className="mt-1 pl-3 ml-3 border-l-2 border-rose-500/30 flex flex-col gap-1">
               {wmsMenus.map((item) => {
@@ -110,7 +142,7 @@ export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userR
           )}
         </div>
 
-        {/* Menu Dropdown Konter & PPOB */}
+        {/* KONTER */}
         <div className="flex flex-col">
           <button
             type="button"
@@ -125,7 +157,6 @@ export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userR
               ▾
             </span>
           </button>
-
           {openKonter && (
             <div className="mt-1 pl-3 ml-3 border-l-2 border-emerald-500/30 flex flex-col gap-1 max-h-[380px] overflow-y-auto pr-1">
               {konterMenus.map((item) => {
@@ -149,13 +180,93 @@ export function Sidebar({ activeTab = "dashboard", setActiveTab, onLogout, userR
             </div>
           )}
         </div>
+
+        {/* WARUNG */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setOpenWarung(!openWarung)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-amber-400">🏪</span>
+              <span className="font-semibold text-amber-300">Operasional Warung</span>
+            </div>
+            <span className={"text-[10px] text-slate-400 transform transition-transform " + (openWarung ? "rotate-180" : "")}>
+              ▾
+            </span>
+          </button>
+          {openWarung && (
+            <div className="mt-1 pl-3 ml-3 border-l-2 border-amber-500/30 flex flex-col gap-1 max-h-[380px] overflow-y-auto pr-1">
+              {warungMenus.map((item) => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveTab && setActiveTab(item.id)}
+                    className={
+                      "w-full text-left flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all " +
+                      (isActive
+                        ? "bg-amber-500/20 text-amber-300 font-bold border-l-2 border-amber-400"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60")
+                    }
+                  >
+                    <span className="text-xs">{item.icon}</span>
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* PORTAL SETTINGS */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setOpenPortal(!openPortal)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-sky-400">⚙️</span>
+              <span className="font-semibold text-sky-300">Pengaturan Portal</span>
+            </div>
+            <span className={"text-[10px] text-slate-400 transform transition-transform " + (openPortal ? "rotate-180" : "")}>
+              ▾
+            </span>
+          </button>
+          {openPortal && (
+            <div className="mt-1 pl-3 ml-3 border-l-2 border-sky-500/30 flex flex-col gap-1">
+              {portalMenus.map((item) => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveTab && setActiveTab(item.id)}
+                    className={
+                      "w-full text-left flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all " +
+                      (isActive
+                        ? "bg-sky-500/20 text-sky-300 font-bold border-l-2 border-sky-400"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60")
+                    }
+                  >
+                    <span className="text-xs">{item.icon}</span>
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Footer Info */}
       <div className="pt-3 border-t border-slate-800/80 flex flex-col gap-2">
         <div className="text-[11px] text-slate-400 px-2 flex justify-between items-center">
           <span>Role: <span className="text-emerald-400 font-semibold">{userRole || "ROOT_ADMIN"}</span></span>
-          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">WMS Active</span>
+          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">Portal Active</span>
         </div>
         {onLogout && (
           <button

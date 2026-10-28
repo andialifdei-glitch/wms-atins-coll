@@ -1,0 +1,110 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import type { WarungTabKey } from "@/lib/warung/types";
+import WarungPlaceholder from "./WarungPlaceholder";
+import WarungMasterRouter from "./WarungMasterRouter";
+import SuppliersView from "./master/SuppliersView";
+import StocksView from "./inventory/StocksView";
+import StockCardView from "./inventory/StockCardView";
+
+interface WarungShellProps {
+  initialTab?: WarungTabKey;
+}
+
+const MODULES: { key: WarungTabKey; label: string; group: string }[] = [
+  { key: "warung_dashboard", label: "Dashboard Warung", group: "Overview" },
+  { key: "warung_pos", label: "Kasir / POS", group: "Penjualan" },
+  { key: "warung_products", label: "Master Produk", group: "Persediaan" },
+  { key: "warung_suppliers", label: "Supplier", group: "Persediaan" },
+  { key: "warung_stock", label: "Stock", group: "Persediaan" },
+  { key: "warung_stock_card", label: "Kartu Stock", group: "Persediaan" },
+  { key: "warung_stock_opname", label: "Stock Opname", group: "Persediaan" },
+  { key: "warung_adjustment_ip", label: "Adjustment (IP)", group: "Persediaan" },
+  { key: "warung_breakage", label: "Breakage / Susut", group: "Persediaan" },
+  { key: "warung_po", label: "Purchase Order", group: "Purchasing" },
+  { key: "warung_receiving", label: "Receiving", group: "Purchasing" },
+  { key: "warung_returns", label: "Retur Pembelian", group: "Purchasing" },
+  { key: "warung_cash_count", label: "Cash Count", group: "Keuangan" },
+  { key: "warung_cash_flow", label: "Kas Masuk / Keluar", group: "Keuangan" },
+  { key: "warung_receivables", label: "Piutang", group: "Keuangan" },
+  { key: "warung_payables", label: "Utang", group: "Keuangan" },
+  { key: "warung_coa", label: "Chart of Accounts", group: "Akuntansi" },
+  { key: "warung_journals", label: "Jurnal Umum", group: "Akuntansi" },
+  { key: "warung_reports", label: "Laporan", group: "Laporan" },
+  { key: "warung_settings", label: "Pengaturan Warung", group: "Pengaturan" },
+];
+
+const GROUPS = ["Overview", "Penjualan", "Persediaan", "Purchasing", "Keuangan", "Akuntansi", "Laporan", "Pengaturan"];
+
+export default function WarungShell({ initialTab }: WarungShellProps) {
+  const [activeTab, setActiveTab] = useState<WarungTabKey>(initialTab || "warung_dashboard");
+
+  // Sinkronkan saat prop initialTab berubah dari parent (klik sidebar)
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
+
+  const activeModule = MODULES.find((m) => m.key === activeTab);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+        <div className="flex justify-between items-center mb-3">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Operasional Warung</h2>
+            <p className="text-[11px] text-slate-500">Business Control Centre — Warung Module</p>
+          </div>
+          <span className="text-[10px] bg-emerald-500/20 text-emerald-700 px-2 py-1 rounded border border-emerald-500/30 font-bold uppercase">
+            Project: operasional-warung
+          </span>
+        </div>
+
+        <div className="space-y-2">
+          {GROUPS.map((g) => {
+            const items = MODULES.filter((m) => m.group === g);
+            if (items.length === 0) return null;
+            return (
+              <div key={g}>
+                <div className="text-[10px] uppercase font-bold text-slate-400 mb-1 px-1 tracking-wider">{g}</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {items.map((m) => (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => setActiveTab(m.key)}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
+                        activeTab === m.key
+                          ? "bg-[#9F1239] text-white border-[#9F1239] shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        {activeTab === "warung_products" ? (
+          <WarungMasterRouter />
+        ) : activeTab === "warung_suppliers" ? (
+          <SuppliersView />
+        ) : activeTab === "warung_stock" ? (
+          <StocksView />
+        ) : activeTab === "warung_stock_card" ? (
+          <StockCardView />
+        ) : activeModule ? (
+          <WarungPlaceholder
+            title={activeModule.label}
+            description={`Modul ${activeModule.label} akan diimplementasikan pada tahap berikutnya.`}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}

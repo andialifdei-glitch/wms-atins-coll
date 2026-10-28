@@ -1,0 +1,55 @@
+﻿import { NextRequest } from "next/server";
+
+export interface AuthenticatedUser {
+  uid: string;
+  id: string;
+  email: string;
+  role: "ROOT_ADMIN" | "ADMIN_GUDANG" | "STAFF_GUDANG";
+  name: string;
+}
+
+const PROJECT_ID = "gen-lang-client-0158803339";
+const DATABASE_ID = "ai-studio-android-wmsatins-fb774f20-678f-4586-aeed-4ad08c978b9f";
+
+export async function verifyServerSession(request: NextRequest): Promise<AuthenticatedUser | null> {
+  try {
+    const sessionCookie = request.cookies.get("admin_session")?.value;
+    if (!sessionCookie) return null;
+
+    const parsed: AuthenticatedUser = JSON.parse(decodeURIComponent(sessionCookie));
+    if (!parsed || !parsed.uid || !parsed.role) return null;
+
+    const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
+    const docUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/users/${parsed.uid}?key=${apiKey}`;
+    
+    const res = await fetch(docUrl, { cache: "no-store" });
+    if (!res.ok) return null;
+
+    const docData = await res.json();
+    const fields = docData.fields || {};
+
+    const isActive = fields.active?.booleanValue ?? true;
+    if (!isActive) return null;
+
+    const currentRole = fields.role?.stringValue;
+    if (currentRole !== parsed.role) return null;
+
+    return {
+      uid: parsed.uid,
+      id: fields.userId?.stringValue || parsed.id,
+      email: fields.email?.stringValue || parsed.email,
+      role: currentRole as "ROOT_ADMIN" | "ADMIN_GUDANG" | "STAFF_GUDANG",
+      name: fields.fullName?.stringValue || fields.name?.stringValue || parsed.name,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function enforceRole(
+  user: AuthenticatedUser | null,
+  allowedRoles: ("ROOT_ADMIN" | "ADMIN_GUDANG" | "STAFF_GUDANG")[]
+): boolean {
+  if (!user) return false;
+  return allowedRoles.includes(user.role);
+}

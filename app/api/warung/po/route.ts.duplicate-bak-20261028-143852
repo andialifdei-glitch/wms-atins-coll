@@ -1,0 +1,156 @@
+import { NextRequest } from "next/server";
+import { getWarungSessionUser, requireRole } from "@/lib/warung/session";
+import { warungFsFetch, warungDatastoreBase } from "@/lib/firebase-admin-warung";
+import { okResponse, errorResponse, unauthorizedResponse, forbiddenResponse } from "@/lib/warung/response";
+import { writeAuditLog } from "@/lib/warung/audit";
+import { nextSequence } from "@/lib/warung/counters";
+
+export const dynamic = "force-dynamic";
+
+interface PoItem {
+  productCode: string;
+  productName: string;
+  qty: number;
+  cost: number;
+  subtotal: number;
+}
+
+function docToPo(d: any) {
+  const f = d.fields || {};
+  const itemsRaw = f.items?.arrayValue?.values || [];
+  const items: PoItem[] = itemsRaw.map((v: any) => {
+    const m = v.mapValue?.fields || {};
+    return {
+      productCode: m.productCode?.stringValue || "",
+      productName: m.productName?.stringValue || "",
+      qty: parseInt(m.qty?.integerValue || "0", 10),
+      cost: parseInt(m.cost?.integerValue || "0", 10),
+      subtotal: parseInt(m.subtotal?.integerValue || "0", 10),
+    };
+  });
+  return {
+    poId: f.poId?.stringValue || d.name.split("/").pop(),
+    supplierCode: f.supplierCode?.stringValue || "",
+    supplierName: f.supplierName?.stringValue || "",
+    orderDate: f.orderDate?.stringValue || "",
+    expectedDate: f.expectedDate?.stringValue || "",
+    status: f.status?.stringValue || "DRAFT",
+    items,
+    totalAmount: parseInt(f.totalAmount?.integerValue || "0", 10),
+    notes: f.notes?.stringValue || "",
+    createdAt: f.createdAt?.timestampValue || "",
+    createdBy: f.createdBy?.stringValue || "",
+  };
+}
+
+export async function GET(request: NextRequest) {
+  const user = await getWarungSessionUser(request);
+  if (!user) return unauthorizedResponse();
+
+  const { searchParams } = new URL(request.url);
+  const status = (searchParams.get("status") || "").trim();
+  const q = (searchParams.get("q") || "").toLowerCase().trim();
+
+  try {
+    const res = await warungFsFetch(`${warungDatastoreBase()}/warung_po?pageSize=300`);
+    if (!res.ok) return errorResponse("Gagal baca PO.", 500);
+    const j: any = await res.json();
+    let items = (j.documents || []).map(docToPo);
+    if (status) items = items.filter((x: any) => x.status === status);
+    if (q) items = items.filter((x: any) => x.poId.toLowerCase().includes(q) || x.supplierName.toLowerCase().includes(q));
+    items.sort((a: any, b: any) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    return okResponse(items);
+  } catch (e: any) {
+    return errorResponse(e.message, 500);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const user = await getWarungSessionUser(request);
+  if (!user) return unauthorizedResponse();
+  if (!requireRole(user, ["ROOT_ADMIN", "ADMIN_WARUNG"])) return forbiddenResponse();
+
+  const body = await request.json().catch(() => ({}));
+  const supplierCode = String(body.supplierCode || "").trim();
+  const orderDate = String(body.orderDate || "").trim() || new Date().toISOString().slice(0, 10);
+  const expectedDate = String(body.expectedDate || "").trim();
+  const notes = String(body.notes || "").trim();
+  const rawItems = Array.isArray(body.items) ? body.items : [];
+
+  if (!supplierCode) return errorResponse("Supplier wajib dipilih.");
+  if (rawItems.length === 0) return errorResponse("Minimal 1 item.");
+
+  try {
+    const base = warungDatastoreBase();
+
+    const supRes = await warungFsFetch(`${base}/warung_suppliers/${encodeURIComponent(supplierCode)}`);
+    if (!supRes.ok) return errorResponse("Supplier tidak ditemukan.", 400);
+    const sj: any = await supRes.json();
+    const supplierName = sj.fields?.supplierName?.stringValue || "";
+
+    const items: PoItem[] = [];
+    let totalAmount = 0;
+    for (const it of rawItems) {
+      const productCode = String(it.productCode || "").trim();
+      const qty = Math.trunc(Number(it.qty || 0));
+      const cost = Math.max(0, Math.trunc(Number(it.cost || 0)));
+      if (!productCode || qty <= 0) return errorResponse("Item tidak valid: " + productCode);
+      const prodRes = await warungFsFetch(`${base}/warung_products/${encodeURIComponent(productCode)}`);
+      if (!prodRes.ok) return errorResponse("Produk tidak ditemukan: " + productCode, 400);
+      const pj: any = await prodRes.json();
+      const productName = pj.fields?.name?.stringValue || "";
+      const subtotal = qty * cost;
+      totalAmount += subtotal;
+      items.push({ productCode, productName, qty, cost, subtotal });
+    }
+
+    const now = new Date();
+    const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+    const seq = await nextSequence("po_" + ymd, 1);
+    const poId = `PO-${ymd}-${String(seq).padStart(3, "0")}`;
+
+    const itemsArrayValues = items.map((it) => ({
+      mapValue: {
+        fields: {
+          productCode: { stringValue: it.productCode },
+          productName: { stringValue: it.productName },
+          qty: { integerValue: String(it.qty) },
+          cost: { integerValue: String(it.cost) },
+          subtotal: { integerValue: String(it.subtotal) },
+        },
+      },
+    }));
+
+    const payload = {
+      fields: {
+        poId: { stringValue: poId },
+        supplierCode: { stringValue: supplierCode },
+        supplierName: { stringValue: supplierName },
+        orderDate: { stringValue: orderDate },
+        expectedDate: { stringValue: expectedDate },
+        status: { stringValue: "DRAFT" },
+        items: { arrayValue: { values: itemsArrayValues } },
+        totalAmount: { integerValue: String(totalAmount) },
+        notes: { stringValue: notes },
+        createdAt: { timestampValue: new Date().toISOString() },
+        createdBy: { stringValue: user.id },
+      },
+    };
+
+    const fsUrl = `${base}/warung_po/${encodeURIComponent(poId)}`;
+    const res = await warungFsFetch(fsUrl, { method: "PATCH", body: JSON.stringify(payload) });
+    if (!res.ok) return errorResponse("Gagal simpan PO.", 500);
+
+    await writeAuditLog({
+      actor: { uid: user.uid, id: user.id, name: user.name, role: user.role },
+      action: "CREATE_PO",
+      entity: "warung_po",
+      entityId: poId,
+      after: { poId, supplierCode, totalAmount, itemCount: items.length },
+    });
+
+    return okResponse({ poId, totalAmount, itemCount: items.length }, `PO ${poId} berhasil dibuat.`);
+  } catch (e: any) {
+    return errorResponse(e.message, 500);
+  }
+}

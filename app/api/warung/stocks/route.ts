@@ -1,0 +1,82 @@
+import { NextRequest } from "next/server";
+import { getWarungSessionUser } from "@/lib/warung/session";
+import { warungFsFetch, warungDatastoreBase } from "@/lib/firebase-admin-warung";
+import { okResponse, errorResponse, unauthorizedResponse } from "@/lib/warung/response";
+
+export const dynamic = "force-dynamic";
+
+interface StockRow {
+  productCode: string;
+  qty: number;
+  lastMovementAt: string;
+  productName?: string;
+  minStock?: number;
+  unit?: string;
+  low?: boolean;
+}
+
+export async function GET(request: NextRequest) {
+  const user = await getWarungSessionUser(request);
+  if (!user) return unauthorizedResponse();
+
+  const { searchParams } = new URL(request.url);
+  const q = (searchParams.get("q") || "").toLowerCase().trim();
+  const lowOnly = searchParams.get("lowOnly") === "true";
+
+  try {
+    const base = warungDatastoreBase();
+    const [stRes, prodRes] = await Promise.all([
+      warungFsFetch(`${base}/warung_stocks?pageSize=500`),
+      warungFsFetch(`${base}/warung_products?pageSize=500`),
+    ]);
+    if (!stRes.ok) return errorResponse("Gagal baca stok.", 500);
+
+    const prodMap: Record<string, any> = {};
+    if (prodRes.ok) {
+      const pj: any = await prodRes.json();
+      (pj.documents || []).forEach((d: any) => {
+        const code = d.name.split("/").pop();
+        prodMap[code] = {
+          name: d.fields?.name?.stringValue || "",
+          minStock: parseInt(d.fields?.minStock?.integerValue || "0", 10),
+          unit: d.fields?.unit?.stringValue || "",
+        };
+      });
+    }
+
+    const stJ: any = await stRes.json();
+
+    const stockMap: Record<string, { qty: number; lastMovementAt: string }> = {};
+    (stJ.documents || []).forEach((d: any) => {
+      const code = d.name.split("/").pop();
+      stockMap[code] = {
+        qty: parseInt(d.fields?.qty?.integerValue || "0", 10),
+        lastMovementAt: d.fields?.lastMovementAt?.timestampValue || "",
+      };
+    });
+
+    const allProductCodes = Object.keys(prodMap);
+    let items: StockRow[] = allProductCodes.map((code) => {
+      const p = prodMap[code];
+      const s = stockMap[code] || { qty: 0, lastMovementAt: "" };
+      const low = p.minStock !== undefined && s.qty <= (p.minStock || 0);
+      return {
+        productCode: code,
+        qty: s.qty,
+        lastMovementAt: s.lastMovementAt,
+        productName: p.name,
+        minStock: p.minStock,
+        unit: p.unit,
+        low,
+      };
+    });
+
+    if (q) items = items.filter((r) => r.productCode.toLowerCase().includes(q) || (r.productName || "").toLowerCase().includes(q));
+    if (lowOnly) items = items.filter((r) => r.low);
+
+    items.sort((a, b) => a.productCode.localeCompare(b.productCode));
+    return okResponse(items);
+  } catch (e: any) {
+    return errorResponse(e.message, 500);
+  }
+}
